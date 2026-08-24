@@ -85,3 +85,4 @@ async function getBalance() {
 }
 
 export { CONTRACT, EXPLORER_ADDR, EXPLORER_TX, CHAIN_ID_HEX, connect, disconnect, read, write, getAddress, isConnected, getBalance };
+// Frontend ready for wallet transactions
