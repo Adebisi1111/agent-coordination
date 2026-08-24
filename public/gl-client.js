@@ -2,16 +2,16 @@
 import { createClient } from 'genlayer-js';
 import { testnetBradbury } from 'genlayer-js/chains';
 
-export const CONTRACT = '0xbfe7b4002133410954FcD8B1c3156655889A241d';
-export const EXPLORER_ADDR = 'https://explorer-bradbury.genlayer.com/address/';
-export const EXPLORER_TX = 'https://explorer-bradbury.genlayer.com/tx/';
-export const CHAIN_ID_HEX = '0x107d'; // 4221
+const CONTRACT = '0xbfe7b4002133410954FcD8B1c3156655889A241d';
+const EXPLORER_ADDR = 'https://explorer-bradbury.genlayer.com/address/';
+const EXPLORER_TX = 'https://explorer-bradbury.genlayer.com/tx/';
+const CHAIN_ID_HEX = '0x107d'; // 4221
 
 let client = null;
 let address = null;
 
-export const getAddress = () => address;
-export const isConnected = () => !!client && !!address;
+const getAddress = () => address;
+const isConnected = () => !!client && !!address;
 
 function publicClient() {
   return createClient({ chain: testnetBradbury });
@@ -43,7 +43,7 @@ async function ensureChain() {
   }
 }
 
-export async function connect() {
+async function connect() {
   if (!window.ethereum) throw new Error('No wallet detected. Open in MetaMask or Rabby.');
   const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
   if (!accounts || !accounts.length) throw new Error('No account authorised.');
@@ -57,14 +57,14 @@ export async function connect() {
   return address;
 }
 
-export function disconnect() { client = null; address = null; }
+function disconnect() { client = null; address = null; }
 
-export async function read(functionName, args = []) {
+async function read(functionName, args = []) {
   const c = client ?? publicClient();
   return c.readContract({ address: CONTRACT, functionName, args });
 }
 
-export async function write(functionName, args = [], genAmount = '0') {
+async function write(functionName, args = [], genAmount = '0') {
   if (!client) throw new Error('Connect your wallet first.');
   const value = BigInt(Math.round(parseFloat(genAmount || '0') * 1e18));
   const hash = await client.writeContract({ address: CONTRACT, functionName, args, value });
@@ -78,8 +78,10 @@ export async function write(functionName, args = [], genAmount = '0') {
   return { hash, exec };
 }
 
-export async function getBalance() {
+async function getBalance() {
   if (!address) return 0;
   const wei = await window.ethereum.request({ method: 'eth_getBalance', params: [address, 'latest'] });
   return Number(BigInt(wei)) / 1e18;
 }
+
+export { CONTRACT, EXPLORER_ADDR, EXPLORER_TX, CHAIN_ID_HEX, connect, disconnect, read, write, getAddress, isConnected, getBalance };

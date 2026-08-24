@@ -151,22 +151,70 @@
 </div>
 
 <script type="module">
-import { CONTRACT, connect, disconnect, read, write, getAddress, isConnected, getBalance } from './gl-client.bundle.js?v=2';
+import { createClient } from 'https://esm.sh/genlayer-js@1.1.8';
+import { testnetBradbury } from 'https://esm.sh/genlayer-js@1.1.8/chains';
+
+const CONTRACT = '0xbfe7b4002133410954FcD8B1c3156655889A241d';
+const CHAIN_ID_HEX = '0x107d';
+
+let client = null;
+let address = null;
 
 const $ = (id) => document.getElementById(id);
 const short = (a) => a.slice(0, 6) + '…' + a.slice(-4);
 const f = (n, d = 4) => n.toFixed(d).replace(/\.?0+$/, '') || '0';
 
-// Wallet connection
-async function connectWallet() {
+function publicClient() {
+  return createClient({ chain: testnetBradbury });
+}
+
+async function ensureChain() {
+  const current = await window.ethereum.request({ method: 'eth_chainId' });
+  if (current === CHAIN_ID_HEX) return;
   try {
-    const addr = await connect();
-    $('walletStatus').textContent = short(addr);
+    await window.ethereum.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: CHAIN_ID_HEX }],
+    });
+  } catch (err) {
+    if (err && (err.code === 4902 || err.code === -32603)) {
+      await window.ethereum.request({
+        method: 'wallet_addEthereumChain',
+        params: [{
+          chainId: CHAIN_ID_HEX,
+          chainName: 'GenLayer Bradbury Testnet',
+          nativeCurrency: { name: 'GEN', symbol: 'GEN', decimals: 18 },
+          rpcUrls: ['https://rpc-bradbury.genlayer.com'],
+          blockExplorerUrls: ['https://explorer-bradbury.genlayer.com'],
+        }],
+      });
+    } else {
+      throw err;
+    }
+  }
+}
+
+async function connectWallet() {
+  if (!window.ethereum) {
+    alert('No wallet detected. Open in MetaMask or Rabby.');
+    return;
+  }
+  try {
+    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    if (!accounts || !accounts.length) throw new Error('No account authorised.');
+    await ensureChain();
+    address = accounts[0];
+    client = createClient({
+      chain: testnetBradbury,
+      account: address,
+      provider: window.ethereum,
+    });
+    $('walletStatus').textContent = short(address);
     $('walletStatus').classList.add('connected');
     $('connectBtn').textContent = 'Connected';
     $('connectBtn').disabled = true;
-    const bal = await getBalance();
-    $('yourRep').textContent = f(bal, 2) + ' GEN';
+    const wei = await window.ethereum.request({ method: 'eth_getBalance', params: [address, 'latest'] });
+    $('yourRep').textContent = f(Number(BigInt(wei)) / 1e18, 2) + ' GEN';
   } catch (e) {
     alert('Connection failed: ' + e.message);
   }
@@ -191,14 +239,15 @@ function showTab(id) {
 
 async function loadTasks() {
   try {
-    const count = await read('getClaimCount', []);
+    const c = client ?? publicClient();
+    const count = await c.readContract({ address: CONTRACT, functionName: 'getClaimCount', args: [] });
     const total = count ? parseInt(count.toString()) : 0;
     $('taskCount').textContent = total;
 
     let openHtml = '', allHtml = '';
     let openCount = 0;
     for (let i = 1; i <= total; i++) {
-      const task = await read('getTask', [`task-${i}`]);
+      const task = await c.readContract({ address: CONTRACT, functionName: 'getTask', args: [`task-${i}`] });
       if (!task || !task.exists) continue;
       const status = task.status || 'OPEN';
       const html = `<div class="item">
@@ -226,13 +275,19 @@ async function loadAgents() {
 }
 
 async function postTask() {
-  if (!isConnected()) return alert('Connect wallet first');
+  if (!client) return alert('Connect wallet first');
   const desc = $('taskDesc').value.trim();
   const reward = parseFloat($('taskReward').value) || 0;
   if (!desc) return alert('Enter a description');
   if (reward <= 0) return alert('Enter a reward');
   try {
-    const { hash } = await write('postTask', [desc], reward.toString());
+    const value = BigInt(Math.round(reward * 1e18));
+    const hash = await client.writeContract({ address: CONTRACT, functionName: 'postTask', args: [desc], value });
+    const receipt = await client.waitForTransactionReceipt({ hash, retries: 100, interval: 5000 });
+    let lr = receipt?.consensus_data?.leader_receipt;
+    if (Array.isArray(lr)) lr = lr[0];
+    const exec = receipt?.txExecutionResultName ?? lr?.execution_result;
+    if (exec !== 'FINISHED_WITH_RETURN') throw new Error('Transaction did not finish cleanly');
     $('taskDesc').value = '';
     $('taskReward').value = '';
     alert('Task posted! Tx: ' + short(hash));
@@ -243,13 +298,19 @@ async function postTask() {
 }
 
 async function registerAgent() {
-  if (!isConnected()) return alert('Connect wallet first');
+  if (!client) return alert('Connect wallet first');
   const caps = $('agentCaps').value.trim();
   const stake = parseFloat($('agentStake').value) || 0;
   if (!caps) return alert('Enter capabilities');
   if (stake < 1) return alert('Minimum stake is 1 GEN');
   try {
-    const { hash } = await write('registerAgent', [caps], stake.toString());
+    const value = BigInt(Math.round(stake * 1e18));
+    const hash = await client.writeContract({ address: CONTRACT, functionName: 'registerAgent', args: [caps], value });
+    const receipt = await client.waitForTransactionReceipt({ hash, retries: 100, interval: 5000 });
+    let lr = receipt?.consensus_data?.leader_receipt;
+    if (Array.isArray(lr)) lr = lr[0];
+    const exec = receipt?.txExecutionResultName ?? lr?.execution_result;
+    if (exec !== 'FINISHED_WITH_RETURN') throw new Error('Transaction did not finish cleanly');
     $('agentCaps').value = '';
     $('agentStake').value = '';
     alert('Registered! Tx: ' + short(hash));
@@ -259,9 +320,14 @@ async function registerAgent() {
 }
 
 async function claimTask(id) {
-  if (!isConnected()) return alert('Connect wallet first');
+  if (!client) return alert('Connect wallet first');
   try {
-    const { hash } = await write('claimTask', [id], '0');
+    const hash = await client.writeContract({ address: CONTRACT, functionName: 'claimTask', args: [id], value: '0' });
+    const receipt = await client.waitForTransactionReceipt({ hash, retries: 100, interval: 5000 });
+    let lr = receipt?.consensus_data?.leader_receipt;
+    if (Array.isArray(lr)) lr = lr[0];
+    const exec = receipt?.txExecutionResultName ?? lr?.execution_result;
+    if (exec !== 'FINISHED_WITH_RETURN') throw new Error('Transaction did not finish cleanly');
     alert('Claimed! Tx: ' + short(hash));
     loadTasks();
   } catch (e) {
@@ -270,9 +336,14 @@ async function claimTask(id) {
 }
 
 async function verifyTask(id) {
-  if (!isConnected()) return alert('Connect wallet first');
+  if (!client) return alert('Connect wallet first');
   try {
-    const { hash } = await write('verifyDelivery', [id], '0');
+    const hash = await client.writeContract({ address: CONTRACT, functionName: 'verifyDelivery', args: [id], value: '0' });
+    const receipt = await client.waitForTransactionReceipt({ hash, retries: 100, interval: 5000 });
+    let lr = receipt?.consensus_data?.leader_receipt;
+    if (Array.isArray(lr)) lr = lr[0];
+    const exec = receipt?.txExecutionResultName ?? lr?.execution_result;
+    if (exec !== 'FINISHED_WITH_RETURN') throw new Error('Transaction did not finish cleanly');
     alert('Verification submitted! Tx: ' + short(hash));
     loadTasks();
   } catch (e) {
