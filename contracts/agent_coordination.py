@@ -48,7 +48,7 @@ class AgentCoordination(gl.Contract):
         pass
 
     @gl.public.write.payable
-    def register_agent(self, capabilities: str) -> None:
+    def registerAgent(self, capabilities: str) -> None:
         """Register as an agent with capabilities (comma-separated)."""
         sender = gl.message.sender_address.as_hex
         if gl.message.value < self.min_stake:
@@ -69,7 +69,7 @@ class AgentCoordination(gl.Contract):
             self.agents[sender] = existing
 
     @gl.public.write.payable
-    def post_task(self, description: str) -> str:
+    def postTask(self, description: str) -> str:
         """Post a task with reward (value sent)."""
         if gl.message.value <= u256(0):
             raise Exception("Reward must be > 0")
@@ -87,7 +87,7 @@ class AgentCoordination(gl.Contract):
         return task_id
 
     @gl.public.write
-    def claim_task(self, task_id: str) -> None:
+    def claimTask(self, task_id: str) -> None:
         """Claim a task. Only verified agents can claim."""
         sender = gl.message.sender_address.as_hex
         agent = self.agents.get(sender, None)
@@ -103,7 +103,7 @@ class AgentCoordination(gl.Contract):
         self.tasks[task_id] = task
 
     @gl.public.write
-    def submit_delivery(self, task_id: str, delivery_url: str) -> None:
+    def submitDelivery(self, task_id: str, delivery_url: str) -> None:
         """Submit delivery for an assigned task."""
         sender = gl.message.sender_address.as_hex
         task = self.tasks.get(task_id, None)
@@ -118,7 +118,7 @@ class AgentCoordination(gl.Contract):
         self.tasks[task_id] = task
 
     @gl.public.write
-    def verify_delivery(self, task_id: str) -> None:
+    def verifyDelivery(self, task_id: str) -> None:
         """Verify a delivery via consensus. Checks if deliverable exists and matches task."""
         task = self.tasks.get(task_id, None)
         if task is None:
@@ -182,7 +182,7 @@ class AgentCoordination(gl.Contract):
         })
 
     @gl.public.view
-    def get_agent(self, addr: Address) -> str:
+    def getAgent(self, addr: Address) -> str:
         agent_hex = Address(addr).as_hex
         a = self.agents.get(agent_hex, None)
         if a is None:

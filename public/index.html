@@ -64,6 +64,9 @@
   .addr{font-family:ui-monospace,monospace;font-size:10.5px;color:var(--muted)}
   .empty{text-align:center;color:var(--muted);padding:26px 10px;font-size:13px}
   .loading{text-align:center;color:var(--muted);padding:20px;font-size:13px}
+  .wallet-status{font-size:11px;padding:5px 10px;border-radius:20px;
+        background:var(--panel2);border:1px solid var(--line);color:var(--muted)}
+  .wallet-status.connected{color:var(--yes);border-color:var(--yes)}
   @media(max-width:420px){
     .grid{grid-template-columns:1fr}
   }
@@ -73,6 +76,10 @@
 
 <div class="top">
   <h1>Agent Coordination</h1><span class="badge">GenLayer</span>
+  <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+    <span id="walletStatus" class="wallet-status">Not connected</span>
+    <button class="btn btn-secondary" id="connectBtn" onclick="connectWallet()">Connect</button>
+  </div>
 </div>
 <p class="sub">
   Post tasks, agents claim them, consensus verifies delivery. Staked agents earn reputation through verified work.
@@ -150,6 +157,26 @@ const $ = (id) => document.getElementById(id);
 const short = (a) => a.slice(0, 6) + '…' + a.slice(-4);
 const f = (n, d = 4) => n.toFixed(d).replace(/\.?0+$/, '') || '0';
 
+let walletAddress = null;
+
+// Wallet connection
+async function connectWallet() {
+  if (typeof window.ethereum === 'undefined') {
+    alert('MetaMask not detected. Please install MetaMask.');
+    return;
+  }
+  try {
+    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    walletAddress = accounts[0];
+    $('walletStatus').textContent = short(walletAddress);
+    $('walletStatus').classList.add('connected');
+    $('connectBtn').textContent = 'Connected';
+    $('connectBtn').disabled = true;
+  } catch (e) {
+    alert('Connection failed: ' + e.message);
+  }
+}
+
 // Tab navigation
 document.querySelectorAll('.nav a').forEach(a => {
   a.addEventListener('click', (e) => {
@@ -176,7 +203,7 @@ async function loadTasks() {
     let openHtml = '', allHtml = '';
     let openCount = 0;
     for (let i = 1; i <= total; i++) {
-      const task = await contractCall('get_task', 'view', [`task-${i}`]);
+      const task = await contractCall('getTask', 'view', [`task-${i}`]);
       if (!task || !task.exists) continue;
       const status = task.status || 'OPEN';
       const html = `<div class="item">
@@ -204,12 +231,13 @@ async function loadAgents() {
 }
 
 async function postTask() {
+  if (!walletAddress) return alert('Connect wallet first');
   const desc = $('taskDesc').value.trim();
   const reward = parseFloat($('taskReward').value) || 0;
   if (!desc) return alert('Enter a description');
   if (reward <= 0) return alert('Enter a reward');
   try {
-    await contractCall('post_task', 'write', [desc], reward * 1e18);
+    await contractCall('postTask', 'write', [desc], reward * 1e18);
     $('taskDesc').value = '';
     $('taskReward').value = '';
     alert('Task posted!');
@@ -220,12 +248,13 @@ async function postTask() {
 }
 
 async function registerAgent() {
+  if (!walletAddress) return alert('Connect wallet first');
   const caps = $('agentCaps').value.trim();
   const stake = parseFloat($('agentStake').value) || 0;
   if (!caps) return alert('Enter capabilities');
   if (stake < 1) return alert('Minimum stake is 1 GEN');
   try {
-    await contractCall('register_agent', 'write', [caps], stake * 1e18);
+    await contractCall('registerAgent', 'write', [caps], stake * 1e18);
     $('agentCaps').value = '';
     $('agentStake').value = '';
     alert('Registered!');
@@ -235,8 +264,9 @@ async function registerAgent() {
 }
 
 async function claimTask(id) {
+  if (!walletAddress) return alert('Connect wallet first');
   try {
-    await contractCall('claim_task', 'write', [id], 0);
+    await contractCall('claimTask', 'write', [id], 0);
     alert('Claimed!');
     loadTasks();
   } catch (e) {
@@ -245,8 +275,9 @@ async function claimTask(id) {
 }
 
 async function verifyTask(id) {
+  if (!walletAddress) return alert('Connect wallet first');
   try {
-    await contractCall('verify_delivery', 'write', [id], 0);
+    await contractCall('verifyDelivery', 'write', [id], 0);
     alert('Verification submitted!');
     loadTasks();
   } catch (e) {
