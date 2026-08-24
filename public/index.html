@@ -169,14 +169,14 @@ function showTab(id) {
 
 async function loadTasks() {
   try {
-    const count = await contractCall('getClaimCount', 'view', []);
+    const count = await contractCall('get_claim_count', 'view', []);
     const total = count ? parseInt(count.toString()) : 0;
     $('taskCount').textContent = total;
 
     let openHtml = '', allHtml = '';
     let openCount = 0;
     for (let i = 1; i <= total; i++) {
-      const task = await contractCall('getTask', 'view', [`task-${i}`]);
+      const task = await contractCall('get_task', 'view', [`task-${i}`]);
       if (!task || !task.exists) continue;
       const status = task.status || 'OPEN';
       const html = `<div class="item">
@@ -209,7 +209,7 @@ async function postTask() {
   if (!desc) return alert('Enter a description');
   if (reward <= 0) return alert('Enter a reward');
   try {
-    await contractCall('postTask', 'write', [desc], reward * 1e18);
+    await contractCall('post_task', 'write', [desc], reward * 1e18);
     $('taskDesc').value = '';
     $('taskReward').value = '';
     alert('Task posted!');
@@ -225,7 +225,7 @@ async function registerAgent() {
   if (!caps) return alert('Enter capabilities');
   if (stake < 1) return alert('Minimum stake is 1 GEN');
   try {
-    await contractCall('registerAgent', 'write', [caps], stake * 1e18);
+    await contractCall('register_agent', 'write', [caps], stake * 1e18);
     $('agentCaps').value = '';
     $('agentStake').value = '';
     alert('Registered!');
@@ -236,7 +236,7 @@ async function registerAgent() {
 
 async function claimTask(id) {
   try {
-    await contractCall('claimTask', 'write', [id], 0);
+    await contractCall('claim_task', 'write', [id], 0);
     alert('Claimed!');
     loadTasks();
   } catch (e) {
@@ -246,7 +246,7 @@ async function claimTask(id) {
 
 async function verifyTask(id) {
   try {
-    await contractCall('verifyDelivery', 'write', [id], 0);
+    await contractCall('verify_delivery', 'write', [id], 0);
     alert('Verification submitted!');
     loadTasks();
   } catch (e) {

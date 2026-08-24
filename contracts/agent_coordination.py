@@ -164,6 +164,10 @@ class AgentCoordination(gl.Contract):
         self.tasks[task_id] = task
 
     @gl.public.view
+    def get_claim_count(self) -> str:
+        return json.dumps({"count": int(self.task_count)})
+
+    @gl.public.view
     def get_task(self, task_id: str) -> str:
         t = self.tasks.get(task_id, None)
         if t is None:
