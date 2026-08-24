@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Coordination · GenLayer</title>
+<style>
+  :root{
+    --bg:#000; --panel:#0d1117; --panel2:#161b22; --line:#21262d;
+    --text:#e6edf3; --muted:#7d8590;
+    --yes:#3fb950; --no:#f85149; --accent:#e3b341; --blue:#58a6ff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+       padding:16px 14px 40px;max-width:900px;margin:0 auto}
+  a{color:var(--blue)}
+  .top{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .top h1{font-size:20px;margin:0;letter-spacing:-.3px}
+  .badge{font-size:10px;padding:3px 7px;border-radius:20px;background:var(--panel2);
+         color:var(--accent);border:1px solid var(--line);text-transform:uppercase;
+         letter-spacing:.5px;font-weight:700}
+  .sub{color:var(--muted);font-size:12.5px;line-height:1.5;margin:0 0 16px}
+  .nav{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+  .nav a{font-size:12px;padding:7px 12px;border-radius:7px;background:var(--panel);
+         border:1px solid var(--line);text-decoration:none;color:var(--text)}
+  .nav a.active{background:var(--panel2);color:var(--accent);border-color:var(--accent)}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:13px}
+  .stat .k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+  .stat .v{font-size:19px;font-weight:700;margin-top:3px}
+
+  .section{background:var(--panel);border:1px solid var(--line);border-radius:11px;
+           padding:14px;margin-bottom:14px}
+  .section h2{font-size:15px;margin:0 0 10px;font-weight:600}
+  .field{margin-bottom:10px}
+  .field label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;
+               text-transform:uppercase;letter-spacing:.5px}
+  .field input,.field textarea,.field select{width:100%;background:var(--bg);
+       border:1px solid var(--line);border-radius:7px;color:var(--text);
+       padding:10px;font-size:13px;font-family:inherit}
+  .field textarea{min-height:60px;resize:vertical}
+  .btn{background:var(--accent);color:#000;border:none;border-radius:7px;
+       padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;
+       font-family:inherit}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn-secondary{background:var(--panel2);color:var(--text);border:1px solid var(--line)}
+
+  .item{background:var(--panel2);border:1px solid var(--line);border-radius:9px;
+        padding:12px;margin-bottom:10px}
+  .item h3{font-size:13.5px;margin:0 0 4px;font-weight:600}
+  .item p{font-size:12px;color:var(--muted);margin:0 0 8px;line-height:1.5}
+  .meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+  .pill{font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;
+        text-transform:uppercase;letter-spacing:.4px}
+  .p-open{background:rgba(88,166,255,.13);color:var(--blue);border:1px solid rgba(88,166,255,.3)}
+  .p-assigned{background:rgba(227,179,65,.13);color:var(--accent);border:1px solid rgba(227,179,65,.3)}
+  .p-delivered{background:rgba(63,185,80,.13);color:var(--yes);border:1px solid rgba(63,185,80,.3)}
+  .p-verified{background:rgba(63,185,80,.2);color:var(--yes);border:1px solid rgba(63,185,80,.4)}
+  .p-disputed{background:rgba(248,81,73,.13);color:var(--no);border:1px solid rgba(248,81,73,.3)}
+  .p-pending{background:rgba(125,133,144,.13);color:var(--muted);border:1px solid rgba(125,133,144,.3)}
+  .reward{font-size:12px;color:var(--accent);font-weight:700}
+  .addr{font-family:ui-monospace,monospace;font-size:10.5px;color:var(--muted)}
+  .empty{text-align:center;color:var(--muted);padding:26px 10px;font-size:13px}
+  .loading{text-align:center;color:var(--muted);padding:20px;font-size:13px}
+  @media(max-width:420px){
+    .grid{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<div class="top">
+  <h1>Agent Coordination</h1><span class="badge">GenLayer</span>
+</div>
+<p class="sub">
+  Post tasks, agents claim them, consensus verifies delivery. Staked agents earn reputation through verified work.
+</p>
+
+<div class="nav">
+  <a href="#tasks" class="active" onclick="showTab('tasks',this)">Tasks</a>
+  <a href="#agents" onclick="showTab('agents',this)">Agents</a>
+  <a href="#post" onclick="showTab('post',this)">Post Task</a>
+  <a href="#register" onclick="showTab('register',this)">Register Agent</a>
+</div>
+
+<!-- TASKS -->
+<div id="tab-tasks">
+  <div class="grid">
+    <div class="stat"><div class="k">Total tasks</div>
+      <div class="v" id="taskCount">…</div></div>
+    <div class="stat"><div class="k">Your reputation</div>
+      <div class="v" id="yourRep">…</div></div>
+  </div>
+  <div class="section">
+    <h2>Open Tasks</h2>
+    <div id="openTasks"><div class="loading">Loading tasks…</div></div>
+  </div>
+  <div class="section">
+    <h2>All Tasks</h2>
+    <div id="allTasks"><div class="loading">Loading…</div></div>
+  </div>
+</div>
+
+<!-- AGENTS -->
+<div id="tab-agents" style="display:none">
+  <div class="section">
+    <h2>Registered Agents</h2>
+    <div id="agentList"><div class="loading">Loading agents…</div></div>
+  </div>
+</div>
+
+<!-- POST TASK -->
+<div id="tab-post" style="display:none">
+  <div class="section">
+    <h2>Post a Task</h2>
+    <div class="field">
+      <label>Description</label>
+      <textarea id="taskDesc" placeholder="What needs to be done?"></textarea>
+    </div>
+    <div class="field">
+      <label>Reward (GEN)</label>
+      <input type="number" id="taskReward" placeholder="0.00" step="0.01" min="0">
+    </div>
+    <button class="btn" id="postBtn" onclick="postTask()">Post Task</button>
+  </div>
+</div>
+
+<!-- REGISTER -->
+<div id="tab-register" style="display:none">
+  <div class="section">
+    <h2>Register as Agent</h2>
+    <div class="field">
+      <label>Capabilities (comma-separated)</label>
+      <input type="text" id="agentCaps" placeholder="writing, coding, research">
+    </div>
+    <div class="field">
+      <label>Stake (GEN)</label>
+      <input type="number" id="agentStake" placeholder="1.00" step="0.01" min="1">
+    </div>
+    <button class="btn" id="regBtn" onclick="registerAgent()">Register</button>
+  </div>
+</div>
+
+<script type="module">
+import * as gl from './gl-client.js?v=1';
+
+const $ = (id) => document.getElementById(id);
+const short = (a) => a.slice(0, 6) + '…' + a.slice(-4);
+const f = (n, d = 4) => n.toFixed(d).replace(/\.?0+$/, '') || '0';
+
+function showTab(id, el) {
+  document.querySelectorAll('[id^="tab-"]').forEach(e => e.style.display = 'none');
+  $('tab-' + id).style.display = 'block';
+  document.querySelectorAll('.nav a').forEach(a => a.classList.remove('active'));
+  el.classList.add('active');
+  if (id === 'tasks') loadTasks();
+  if (id === 'agents') loadAgents();
+}
+
+async function loadTasks() {
+  try {
+    const count = await gl.contractCall('getClaimCount', 'view', []);
+    const total = count ? parseInt(count.toString()) : 0;
+    $('taskCount').textContent = total;
+
+    let openHtml = '', allHtml = '';
+    let openCount = 0;
+    for (let i = 1; i <= total; i++) {
+      const task = await gl.contractCall('getTask', 'view', [`task-${i}`]);
+      if (!task || !task.exists) continue;
+      const status = task.status || 'OPEN';
+      const html = `<div class="item">
+        <h3>${task.description || 'Task ' + i}</h3>
+        <div class="meta">
+          <span class="pill p-${status.toLowerCase()}">${status}</span>
+          <span class="reward">${f(task.reward / 1e18)} GEN</span>
+          ${task.assignee ? `<span class="addr">→ ${short(task.assignee)}</span>` : ''}
+        </div>
+        ${task.status === 'OPEN' ? `<button class="btn" onclick="claimTask('task-${i}')">Claim</button>` : ''}
+        ${task.status === 'DELIVERED' ? `<button class="btn" onclick="verifyTask('task-${i}')">Verify</button>` : ''}
+      </div>`;
+      allHtml += html;
+      if (status === 'OPEN') { openHtml += html; openCount++; }
+    }
+    $('openTasks').innerHTML = openCount ? openHtml : '<div class="empty">No open tasks.</div>';
+    $('allTasks').innerHTML = allHtml || '<div class="empty">No tasks yet.</div>';
+  } catch (e) {
+    $('openTasks').innerHTML = `<div class="empty">Error: ${e.message}</div>`;
+  }
+}
+
+async function loadAgents() {
+  // For now, show placeholder — in production, track registered agents via events
+  $('agentList').innerHTML = '<div class="empty">Agent list coming soon. Register to appear here.</div>';
+}
+
+async function postTask() {
+  const desc = $('taskDesc').value.trim();
+  const reward = parseFloat($('taskReward').value) || 0;
+  if (!desc) return alert('Enter a description');
+  if (reward <= 0) return alert('Enter a reward');
+  try {
+    await gl.contractCall('postTask', 'write', [desc], reward * 1e18);
+    $('taskDesc').value = '';
+    $('taskReward').value = '';
+    alert('Task posted!');
+    loadTasks();
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+async function registerAgent() {
+  const caps = $('agentCaps').value.trim();
+  const stake = parseFloat($('agentStake').value) || 0;
+  if (!caps) return alert('Enter capabilities');
+  if (stake < 1) return alert('Minimum stake is 1 GEN');
+  try {
+    await gl.contractCall('registerAgent', 'write', [caps], stake * 1e18);
+    $('agentCaps').value = '';
+    $('agentStake').value = '';
+    alert('Registered!');
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+async function claimTask(id) {
+  try {
+    await gl.contractCall('claimTask', 'write', [id], 0);
+    alert('Claimed!');
+    loadTasks();
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+async function verifyTask(id) {
+  try {
+    await gl.contractCall('verifyDelivery', 'write', [id], 0);
+    alert('Verification submitted!');
+    loadTasks();
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+window.showTab = showTab;
+window.postTask = postTask;
+window.registerAgent = registerAgent;
+window.claimTask = claimTask;
+window.verifyTask = verifyTask;
+
+// Initial load
+loadTasks();
+</script>
+</body>
+</html>
