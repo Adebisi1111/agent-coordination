@@ -169,7 +169,7 @@ function showTab(id) {
 
 async function loadTasks() {
   try {
-    const count = await contractCall('get_claim_count', 'view', []);
+    const count = await contractCall('getClaimCount', 'view', []);
     const total = count ? parseInt(count.toString()) : 0;
     $('taskCount').textContent = total;
 

@@ -2,7 +2,7 @@
 import { createClient } from 'genlayer-js';
 import { testnetBradbury } from 'genlayer-js/chains';
 
-export const CONTRACT = '0x843bA6FD46cAdF940ed14c73Eb507f2CbE808426';
+export const CONTRACT = '0x19FAC8F387761B84351a62F2e2Cd3C5570C72648';
 export const EXPLORER_ADDR = 'https://explorer-bradbury.genlayer.com/address/';
 export const EXPLORER_TX = 'https://explorer-bradbury.genlayer.com/tx/';
 

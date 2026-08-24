@@ -37824,7 +37824,7 @@ var createPublicClient2 = (chainConfig, customTransport) => {
 };
 
 // public/gl-client.js
-var CONTRACT = "0x843bA6FD46cAdF940ed14c73Eb507f2CbE808426";
+var CONTRACT = "0x19FAC8F387761B84351a62F2e2Cd3C5570C72648";
 var EXPLORER_ADDR = "https://explorer-bradbury.genlayer.com/address/";
 var EXPLORER_TX = "https://explorer-bradbury.genlayer.com/tx/";
 var client = createClient2({ chain: testnetBradbury });
