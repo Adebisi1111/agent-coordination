@@ -57,3 +57,6 @@ pytest tests/direct/test_agent_coordination.py -v
 # Deploy
 genlayer deploy --contract contracts/agent_coordination.py
 ```
+
+## Frontend
+Live at: https://adebisi1111.github.io/agent-coordination/
