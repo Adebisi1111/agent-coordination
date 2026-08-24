@@ -151,27 +151,22 @@
 </div>
 
 <script type="module">
-import { CONTRACT, contractCall } from './gl-client.bundle.js?v=1';
+import { CONTRACT, connect, disconnect, read, write, getAddress, isConnected, getBalance } from './gl-client.bundle.js?v=2';
 
 const $ = (id) => document.getElementById(id);
 const short = (a) => a.slice(0, 6) + '…' + a.slice(-4);
 const f = (n, d = 4) => n.toFixed(d).replace(/\.?0+$/, '') || '0';
 
-let walletAddress = null;
-
 // Wallet connection
 async function connectWallet() {
-  if (typeof window.ethereum === 'undefined') {
-    alert('MetaMask not detected. Please install MetaMask.');
-    return;
-  }
   try {
-    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-    walletAddress = accounts[0];
-    $('walletStatus').textContent = short(walletAddress);
+    const addr = await connect();
+    $('walletStatus').textContent = short(addr);
     $('walletStatus').classList.add('connected');
     $('connectBtn').textContent = 'Connected';
     $('connectBtn').disabled = true;
+    const bal = await getBalance();
+    $('yourRep').textContent = f(bal, 2) + ' GEN';
   } catch (e) {
     alert('Connection failed: ' + e.message);
   }
@@ -196,14 +191,14 @@ function showTab(id) {
 
 async function loadTasks() {
   try {
-    const count = await contractCall('getClaimCount', 'view', []);
+    const count = await read('getClaimCount', []);
     const total = count ? parseInt(count.toString()) : 0;
     $('taskCount').textContent = total;
 
     let openHtml = '', allHtml = '';
     let openCount = 0;
     for (let i = 1; i <= total; i++) {
-      const task = await contractCall('getTask', 'view', [`task-${i}`]);
+      const task = await read('getTask', [`task-${i}`]);
       if (!task || !task.exists) continue;
       const status = task.status || 'OPEN';
       const html = `<div class="item">
@@ -231,16 +226,16 @@ async function loadAgents() {
 }
 
 async function postTask() {
-  if (!walletAddress) return alert('Connect wallet first');
+  if (!isConnected()) return alert('Connect wallet first');
   const desc = $('taskDesc').value.trim();
   const reward = parseFloat($('taskReward').value) || 0;
   if (!desc) return alert('Enter a description');
   if (reward <= 0) return alert('Enter a reward');
   try {
-    await contractCall('postTask', 'write', [desc], reward * 1e18);
+    const { hash } = await write('postTask', [desc], reward.toString());
     $('taskDesc').value = '';
     $('taskReward').value = '';
-    alert('Task posted!');
+    alert('Task posted! Tx: ' + short(hash));
     loadTasks();
   } catch (e) {
     alert('Error: ' + e.message);
@@ -248,26 +243,26 @@ async function postTask() {
 }
 
 async function registerAgent() {
-  if (!walletAddress) return alert('Connect wallet first');
+  if (!isConnected()) return alert('Connect wallet first');
   const caps = $('agentCaps').value.trim();
   const stake = parseFloat($('agentStake').value) || 0;
   if (!caps) return alert('Enter capabilities');
   if (stake < 1) return alert('Minimum stake is 1 GEN');
   try {
-    await contractCall('registerAgent', 'write', [caps], stake * 1e18);
+    const { hash } = await write('registerAgent', [caps], stake.toString());
     $('agentCaps').value = '';
     $('agentStake').value = '';
-    alert('Registered!');
+    alert('Registered! Tx: ' + short(hash));
   } catch (e) {
     alert('Error: ' + e.message);
   }
 }
 
 async function claimTask(id) {
-  if (!walletAddress) return alert('Connect wallet first');
+  if (!isConnected()) return alert('Connect wallet first');
   try {
-    await contractCall('claimTask', 'write', [id], 0);
-    alert('Claimed!');
+    const { hash } = await write('claimTask', [id], '0');
+    alert('Claimed! Tx: ' + short(hash));
     loadTasks();
   } catch (e) {
     alert('Error: ' + e.message);
@@ -275,10 +270,10 @@ async function claimTask(id) {
 }
 
 async function verifyTask(id) {
-  if (!walletAddress) return alert('Connect wallet first');
+  if (!isConnected()) return alert('Connect wallet first');
   try {
-    await contractCall('verifyDelivery', 'write', [id], 0);
-    alert('Verification submitted!');
+    const { hash } = await write('verifyDelivery', [id], '0');
+    alert('Verification submitted! Tx: ' + short(hash));
     loadTasks();
   } catch (e) {
     alert('Error: ' + e.message);
