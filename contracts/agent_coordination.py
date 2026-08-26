@@ -38,6 +38,15 @@ class Task:
     verification: str     # "PENDING" | "PASS" | "FAIL"
 
 
+@gl.evm.contract_interface
+class _Payee:
+    class View:
+        pass
+
+    class Write:
+        pass
+
+
 class AgentCoordination(gl.Contract):
     agents: TreeMap[str, Agent]
     tasks: TreeMap[str, Task]
@@ -52,7 +61,7 @@ class AgentCoordination(gl.Contract):
         """Register as an agent with capabilities (comma-separated)."""
         sender = gl.message.sender_address.as_hex
         if gl.message.value < self.min_stake:
-            raise Exception("Stake below minimum (1 GEN)")
+            raise gl.vm.UserError("Stake below minimum (1 GEN)")
         existing = self.agents.get(sender, None)
         if existing is None:
             self.agents[sender] = Agent(
@@ -72,7 +81,7 @@ class AgentCoordination(gl.Contract):
     def postTask(self, description: str) -> str:
         """Post a task with reward (value sent)."""
         if gl.message.value <= u256(0):
-            raise Exception("Reward must be > 0")
+            raise gl.vm.UserError("Reward must be > 0")
         task_id = f"task-{self.task_count + u256(1)}"
         self.tasks[task_id] = Task(
             poster=gl.message.sender_address.as_hex,
@@ -92,76 +101,152 @@ class AgentCoordination(gl.Contract):
         sender = gl.message.sender_address.as_hex
         agent = self.agents.get(sender, None)
         if agent is None or not agent.active:
-            raise Exception("Not a registered agent")
+            raise gl.vm.UserError("Not a registered agent")
         task = self.tasks.get(task_id, None)
         if task is None:
-            raise Exception("Task not found")
+            raise gl.vm.UserError("Task not found")
         if task.status != "OPEN":
-            raise Exception("Task not open")
+            raise gl.vm.UserError("Task not open")
         task.status = "ASSIGNED"
         task.assignee = sender
         self.tasks[task_id] = task
 
     @gl.public.write
     def submitDelivery(self, task_id: str, delivery_url: str) -> None:
-        """Submit delivery for an assigned task."""
+        """Submit or resubmit delivery for an assigned task."""
         sender = gl.message.sender_address.as_hex
         task = self.tasks.get(task_id, None)
         if task is None:
-            raise Exception("Task not found")
+            raise gl.vm.UserError("Task not found")
         if task.assignee != sender:
-            raise Exception("Not assigned to this task")
-        if task.status != "ASSIGNED":
-            raise Exception("Task not assigned")
+            raise gl.vm.UserError("Not assigned to this task")
+        if task.status not in ("ASSIGNED", "DELIVERED"):
+            raise gl.vm.UserError("Task not assigned")
         task.delivery_url = delivery_url
         task.status = "DELIVERED"
+        task.verification = "PENDING"
         self.tasks[task_id] = task
 
     @gl.public.write
-    def verifyDelivery(self, task_id: str) -> None:
-        """Verify a delivery via consensus. Checks if deliverable exists and matches task."""
+    def cancelTask(self, task_id: str) -> None:
+        """Cancel an unclaimed task and refund the poster.
+
+        Escape hatch so a reward is not permanently locked when no agent
+        ever claims or the assigned agent abandons the task.
+        """
         task = self.tasks.get(task_id, None)
         if task is None:
-            raise Exception("Task not found")
+            raise gl.vm.UserError("Task not found")
+        if task.status not in ("OPEN", "ASSIGNED"):
+            raise gl.vm.UserError("Only open or assigned tasks can be cancelled")
+        sender = gl.message.sender_address.as_hex
+        if sender != task.poster:
+            raise gl.vm.UserError("Only the poster can cancel")
+        task.status = "CANCELLED"
+        self.tasks[task_id] = task
+        _Payee(Address(task.poster)).emit_transfer(
+            value=u256(int(task.reward)), on="finalized"
+        )
+
+    @gl.public.write
+    def verifyDelivery(self, task_id: str) -> None:
+        """Verify a delivery via consensus and settle the escrow.
+
+        PASS → agent is paid the reward and earns a reputation point.
+        FAIL → task is DISPUTED; poster can reclaim the reward via resolveDispute().
+        """
+        task = self.tasks.get(task_id, None)
+        if task is None:
+            raise gl.vm.UserError("Task not found")
         if task.status != "DELIVERED":
-            raise Exception("No delivery to verify")
+            raise gl.vm.UserError("No delivery to verify")
 
         ALLOWED = ("PASS", "FAIL")
 
-        def leader() -> dict:
+        def work() -> dict:
             try:
                 content = gl.nondet.web.render(task.delivery_url, mode="text")
             except Exception:
-                content = "(could not fetch)"
+                # Transient fetch failure: treat as unverifiable, not a pass.
+                raise gl.vm.UserError("EVIDENCE_UNREACHABLE")
+            if not content:
+                # An unreadable source proves nothing.
+                return {"verdict": "FAIL"}
             prompt = (
                 f"Task: {task.description}\n"
-                f"Delivery content from {task.delivery_url}:\n\n{content[:2000]}\n\n"
+                f"Delivery content from {task.delivery_url}:\n\n{content[:6000]}\n\n"
                 f"Does this delivery fulfill the task? Respond as JSON: "
                 f'{{"verdict": "PASS"|"FAIL", "reason": "..."}}'
             )
             res = gl.nondet.exec_prompt(prompt, response_format="json")
             verdict = (res.get("verdict") or "").strip().upper()
-            return {"verdict": verdict if verdict in ALLOWED else "FAIL"}
+            if verdict not in ALLOWED:
+                raise gl.vm.UserError("MALFORMED_DECISION")
+            return {"verdict": verdict}
 
-        def validator(leader_result) -> bool:
-            if not isinstance(leader_result, gl.vm.Return):
+        def validator(leaders_res) -> bool:
+            # Error classification per Error Handling docs: agree only when
+            # we reproduce the same deterministic outcome as the leader.
+            if not isinstance(leaders_res, gl.vm.Return):
+                leader_msg = getattr(leaders_res, "message", "")
+                try:
+                    work()
+                    return False            # leader errored, we succeeded
+                except gl.vm.UserError as e:
+                    return str(e.message) == str(leader_msg)
+                except Exception:
+                    return False
+            try:
+                mine = work()
+            except Exception:
                 return False
-            return leader()["verdict"] == leader_result.calldata["verdict"]
+            return mine["verdict"] == leaders_res.calldata["verdict"]
 
-        result = gl.vm.run_nondet_unsafe(leader, validator)
+        try:
+            result = gl.vm.run_nondet_unsafe(work, validator)
+        except gl.vm.UserError as e:
+            raise gl.vm.UserError(f"Verification failed: {e.message}")
+
         task.verification = result["verdict"]
 
         if result["verdict"] == "PASS":
             task.status = "VERIFIED"
-            # Pay agent
             agent = self.agents.get(task.assignee, None)
             if agent is not None:
                 agent.reputation += u256(1)
                 self.agents[task.assignee] = agent
+            # Pay the agent the escrowed reward. Paying an EOA is an EXTERNAL
+            # message, so it routes through the EVM interface contract.
+            _Payee(Address(task.assignee)).emit_transfer(
+                value=u256(int(task.reward)), on="finalized"
+            )
         else:
             task.status = "DISPUTED"
 
         self.tasks[task_id] = task
+
+    @gl.public.write
+    def resolveDispute(self, task_id: str) -> None:
+        """Refund the poster when a task is disputed.
+
+        Defines the reward-resolution path so a disputed task does not leave
+        the reward permanently locked in the contract. Only the original poster
+        may reclaim, and only from the DISPUTED state.
+        """
+        task = self.tasks.get(task_id, None)
+        if task is None:
+            raise gl.vm.UserError("Task not found")
+        if task.status != "DISPUTED":
+            raise gl.vm.UserError("Task is not disputed")
+        sender = gl.message.sender_address.as_hex
+        if sender != task.poster:
+            raise gl.vm.UserError("Only the poster can resolve a dispute")
+
+        task.status = "REFUNDED"
+        self.tasks[task_id] = task
+        _Payee(Address(task.poster)).emit_transfer(
+            value=u256(int(task.reward)), on="finalized"
+        )
 
     @gl.public.view
     def getClaimCount(self) -> str:
@@ -179,6 +264,7 @@ class AgentCoordination(gl.Contract):
             "status": t.status,
             "assignee": t.assignee,
             "verification": t.verification,
+            "poster": t.poster,
         })
 
     @gl.public.view
