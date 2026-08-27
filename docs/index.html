@@ -214,7 +214,13 @@ async function connectWallet() {
     $('connectBtn').textContent = 'Connected';
     $('connectBtn').disabled = true;
     const wei = await window.ethereum.request({ method: 'eth_getBalance', params: [address, 'latest'] });
-    $('yourRep').textContent = f(Number(BigInt(wei)) / 1e18, 2) + ' GEN';
+    const agentRaw = await publicClient().readContract({ address: CONTRACT, functionName: 'getAgent', args: [address] });
+    const agent = agentRaw ? JSON.parse(agentRaw) : { exists: false };
+    if (agent.exists) {
+      $('yourRep').textContent = agent.reputation + ' rep · ' + f(Number(BigInt(wei)) / 1e18, 2) + ' GEN';
+    } else {
+      $('yourRep').textContent = f(Number(BigInt(wei)) / 1e18, 2) + ' GEN';
+    }
   } catch (e) {
     alert('Connection failed: ' + e.message);
   }
@@ -240,14 +246,16 @@ function showTab(id) {
 async function loadTasks() {
   try {
     const c = client ?? publicClient();
-    const count = await c.readContract({ address: CONTRACT, functionName: 'getClaimCount', args: [] });
-    const total = count ? parseInt(count.toString()) : 0;
+    const countRaw = await c.readContract({ address: CONTRACT, functionName: 'getClaimCount', args: [] });
+    const countParsed = countRaw ? JSON.parse(countRaw) : { count: 0 };
+    const total = countParsed.count ? parseInt(countParsed.count.toString()) : 0;
     $('taskCount').textContent = total;
 
     let openHtml = '', allHtml = '';
     let openCount = 0;
     for (let i = 1; i <= total; i++) {
-      const task = await c.readContract({ address: CONTRACT, functionName: 'getTask', args: [`task-${i}`] });
+      const taskRaw = await c.readContract({ address: CONTRACT, functionName: 'getTask', args: [`task-${i}`] });
+      const task = taskRaw ? JSON.parse(taskRaw) : { exists: false };
       if (!task || !task.exists) continue;
       const status = task.status || 'OPEN';
       const html = `<div class="item">
@@ -258,7 +266,10 @@ async function loadTasks() {
           ${task.assignee ? `<span class="addr">→ ${short(task.assignee)}</span>` : ''}
         </div>
         ${task.status === 'OPEN' ? `<button class="btn" onclick="window.claimTask('task-${i}')">Claim</button>` : ''}
+        ${task.status === 'OPEN' && task.poster === address ? `<button class="btn btn-secondary" onclick="window.cancelTask('task-${i}')">Cancel</button>` : ''}
+        ${task.status === 'ASSIGNED' && task.assignee === address ? `<button class="btn" onclick="window.submitDeliveryPrompt('task-${i}')">Submit Delivery</button>` : ''}
         ${task.status === 'DELIVERED' ? `<button class="btn" onclick="window.verifyTask('task-${i}')">Verify</button>` : ''}
+        ${task.status === 'DISPUTED' && task.poster === address ? `<button class="btn btn-refund" onclick="window.resolveDispute('task-${i}')">Resolve & Refund</button>` : ''}
       </div>`;
       allHtml += html;
       if (status === 'OPEN') { openHtml += html; openCount++; }
@@ -351,9 +362,64 @@ async function verifyTask(id) {
   }
 }
 
+async function submitDeliveryPrompt(id) {
+  if (!client) return alert('Connect wallet first');
+  const url = prompt('Delivery URL (link to your work):');
+  if (!url) return;
+  try {
+    const hash = await client.writeContract({ address: CONTRACT, functionName: 'submitDelivery', args: [id, url], value: '0' });
+    const receipt = await client.waitForTransactionReceipt({ hash, retries: 100, interval: 5000 });
+    let lr = receipt?.consensus_data?.leader_receipt;
+    if (Array.isArray(lr)) lr = lr[0];
+    const exec = receipt?.txExecutionResultName ?? lr?.execution_result;
+    if (exec !== 'FINISHED_WITH_RETURN') throw new Error('Transaction did not finish cleanly');
+    alert('Delivery submitted! Tx: ' + short(hash));
+    loadTasks();
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+async function resolveDispute(id) {
+  if (!client) return alert('Connect wallet first');
+  if (!confirm('Refund the reward to your wallet?')) return;
+  try {
+    const hash = await client.writeContract({ address: CONTRACT, functionName: 'resolveDispute', args: [id], value: '0' });
+    const receipt = await client.waitForTransactionReceipt({ hash, retries: 100, interval: 5000 });
+    let lr = receipt?.consensus_data?.leader_receipt;
+    if (Array.isArray(lr)) lr = lr[0];
+    const exec = receipt?.txExecutionResultName ?? lr?.execution_result;
+    if (exec !== 'FINISHED_WITH_RETURN') throw new Error('Transaction did not finish cleanly');
+    alert('Refunded! Tx: ' + short(hash));
+    loadTasks();
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+async function cancelTask(id) {
+  if (!client) return alert('Connect wallet first');
+  if (!confirm('Cancel this task and reclaim your reward?')) return;
+  try {
+    const hash = await client.writeContract({ address: CONTRACT, functionName: 'cancelTask', args: [id], value: '0' });
+    const receipt = await client.waitForTransactionReceipt({ hash, retries: 100, interval: 5000 });
+    let lr = receipt?.consensus_data?.leader_receipt;
+    if (Array.isArray(lr)) lr = lr[0];
+    const exec = receipt?.txExecutionResultName ?? lr?.execution_result;
+    if (exec !== 'FINISHED_WITH_RETURN') throw new Error('Transaction did not finish cleanly');
+    alert('Cancelled! Tx: ' + short(hash));
+    loadTasks();
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
 // Expose to window for inline onclick
 window.claimTask = claimTask;
+window.cancelTask = cancelTask;
 window.verifyTask = verifyTask;
+window.submitDeliveryPrompt = submitDeliveryPrompt;
+window.resolveDispute = resolveDispute;
 
 // Initial load
 loadTasks();
