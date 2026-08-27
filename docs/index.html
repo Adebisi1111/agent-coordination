@@ -150,12 +150,22 @@
   </div>
 </div>
 
+<script type="importmap">
+{
+  "imports": {
+    "genlayer-js": "https://cdn.jsdelivr.net/npm/genlayer-js@1.1.8/+esm",
+    "genlayer-js/chains": "https://cdn.jsdelivr.net/npm/genlayer-js@1.1.8/+esm",
+    "viem/accounts": "https://cdn.jsdelivr.net/npm/viem@2.48.8/accounts/+esm"
+  }
+}
+</script>
 <script type="module">
-import { createClient } from 'https://esm.sh/genlayer-js@1.1.8';
-import { testnetBradbury } from 'https://esm.sh/genlayer-js@1.1.8/chains';
+import { createClient, chains } from 'genlayer-js';
+import { privateKeyToAccount } from 'viem/accounts';
 
 const CONTRACT = '0x7B04E8a1b7759166150bcC34b3095f17296bfC89';
 const CHAIN_ID_HEX = '0x107d';
+const testnetBradbury = chains.testnetBradbury;
 
 let client = null;
 let address = null;
