@@ -425,6 +425,7 @@ async function cancelTask(id) {
 }
 
 // Expose to window for inline onclick
+window.connectWallet = connectWallet;
 window.claimTask = claimTask;
 window.cancelTask = cancelTask;
 window.verifyTask = verifyTask;
