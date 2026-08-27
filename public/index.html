@@ -78,7 +78,7 @@
   <h1>Agent Coordination</h1><span class="badge">GenLayer</span>
   <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
     <span id="walletStatus" class="wallet-status">Not connected</span>
-    <button class="btn btn-secondary" id="connectBtn" onclick="connectWallet()">Connect</button>
+    <button class="btn btn-secondary" id="connectBtn" onclick="toggleWallet()">Connect</button>
   </div>
 </div>
 <p class="sub">
@@ -130,7 +130,7 @@
       <label>Reward (GEN)</label>
       <input type="number" id="taskReward" placeholder="0.00" step="0.01" min="0">
     </div>
-    <button class="btn" id="postBtn">Post Task</button>
+    <button class="btn" id="postBtn" onclick="postTask()">Post Task</button>
   </div>
 </div>
 
@@ -146,16 +146,26 @@
       <label>Stake (GEN)</label>
       <input type="number" id="agentStake" placeholder="1.00" step="0.01" min="1">
     </div>
-    <button class="btn" id="regBtn">Register</button>
+    <button class="btn" id="regBtn" onclick="registerAgent()">Register</button>
   </div>
 </div>
 
+<script type="importmap">
+{
+  "imports": {
+    "genlayer-js": "https://cdn.jsdelivr.net/npm/genlayer-js@1.1.8/+esm",
+    "genlayer-js/chains": "https://cdn.jsdelivr.net/npm/genlayer-js@1.1.8/+esm",
+    "viem/accounts": "https://cdn.jsdelivr.net/npm/viem@2.48.8/accounts/+esm"
+  }
+}
+</script>
 <script type="module">
-import { createClient } from 'https://esm.sh/genlayer-js@1.1.8';
-import { testnetBradbury } from 'https://esm.sh/genlayer-js@1.1.8/chains';
+import { createClient, chains } from 'genlayer-js';
+import { privateKeyToAccount } from 'viem/accounts';
 
 const CONTRACT = '0x7B04E8a1b7759166150bcC34b3095f17296bfC89';
 const CHAIN_ID_HEX = '0x107d';
+const testnetBradbury = chains.testnetBradbury;
 
 let client = null;
 let address = null;
@@ -211,8 +221,8 @@ async function connectWallet() {
     });
     $('walletStatus').textContent = short(address);
     $('walletStatus').classList.add('connected');
-    $('connectBtn').textContent = 'Connected';
-    $('connectBtn').disabled = true;
+    $('connectBtn').textContent = 'Disconnect';
+    $('connectBtn').disabled = false;
     const wei = await window.ethereum.request({ method: 'eth_getBalance', params: [address, 'latest'] });
     const agentRaw = await publicClient().readContract({ address: CONTRACT, functionName: 'getAgent', args: [address] });
     const agent = agentRaw ? JSON.parse(agentRaw) : { exists: false };
@@ -266,10 +276,10 @@ async function loadTasks() {
           ${task.assignee ? `<span class="addr">→ ${short(task.assignee)}</span>` : ''}
         </div>
         ${task.status === 'OPEN' ? `<button class="btn" onclick="window.claimTask('task-${i}')">Claim</button>` : ''}
-        ${task.status === 'OPEN' && task.poster === address ? `<button class="btn btn-secondary" onclick="window.cancelTask('task-${i}')">Cancel</button>` : ''}
-        ${task.status === 'ASSIGNED' && task.assignee === address ? `<button class="btn" onclick="window.submitDeliveryPrompt('task-${i}')">Submit Delivery</button>` : ''}
+        ${task.status === 'OPEN' && task.poster && task.poster.toLowerCase() === address?.toLowerCase() ? `<button class="btn btn-secondary" onclick="window.cancelTask('task-${i}')">Cancel</button>` : ''}
+        ${task.status === 'ASSIGNED' && task.assignee && task.assignee.toLowerCase() === address?.toLowerCase() ? `<button class="btn" onclick="window.submitDeliveryPrompt('task-${i}')">Submit Delivery</button>` : ''}
         ${task.status === 'DELIVERED' ? `<button class="btn" onclick="window.verifyTask('task-${i}')">Verify</button>` : ''}
-        ${task.status === 'DISPUTED' && task.poster === address ? `<button class="btn btn-refund" onclick="window.resolveDispute('task-${i}')">Resolve & Refund</button>` : ''}
+        ${task.status === 'DISPUTED' && task.poster && task.poster.toLowerCase() === address?.toLowerCase() ? `<button class="btn btn-refund" onclick="window.resolveDispute('task-${i}')">Resolve & Refund</button>` : ''}
       </div>`;
       allHtml += html;
       if (status === 'OPEN') { openHtml += html; openCount++; }
@@ -414,7 +424,33 @@ async function cancelTask(id) {
   }
 }
 
+async function disconnectWallet() {
+  client = null;
+  address = null;
+  $('walletStatus').textContent = 'Not connected';
+  $('walletStatus').classList.remove('connected');
+  $('connectBtn').textContent = 'Connect';
+  $('connectBtn').disabled = false;
+  $('yourRep').textContent = '…';
+  $('taskCount').textContent = '…';
+  $('openTasks').innerHTML = '<div class="loading">Loading tasks…</div>';
+  $('allTasks').innerHTML = '<div class="loading">Loading…</div>';
+}
+
+async function toggleWallet() {
+  if (client) {
+    await disconnectWallet();
+  } else {
+    await connectWallet();
+  }
+}
+
 // Expose to window for inline onclick
+window.toggleWallet = toggleWallet;
+window.connectWallet = connectWallet;
+window.disconnectWallet = disconnectWallet;
+window.postTask = postTask;
+window.registerAgent = registerAgent;
 window.claimTask = claimTask;
 window.cancelTask = cancelTask;
 window.verifyTask = verifyTask;
