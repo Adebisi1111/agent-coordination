@@ -276,10 +276,10 @@ async function loadTasks() {
           ${task.assignee ? `<span class="addr">→ ${short(task.assignee)}</span>` : ''}
         </div>
         ${task.status === 'OPEN' ? `<button class="btn" onclick="window.claimTask('task-${i}')">Claim</button>` : ''}
-        ${task.status === 'OPEN' && task.poster === address ? `<button class="btn btn-secondary" onclick="window.cancelTask('task-${i}')">Cancel</button>` : ''}
-        ${task.status === 'ASSIGNED' && task.assignee === address ? `<button class="btn" onclick="window.submitDeliveryPrompt('task-${i}')">Submit Delivery</button>` : ''}
+        ${task.status === 'OPEN' && task.poster && task.poster.toLowerCase() === address?.toLowerCase() ? `<button class="btn btn-secondary" onclick="window.cancelTask('task-${i}')">Cancel</button>` : ''}
+        ${task.status === 'ASSIGNED' && task.assignee && task.assignee.toLowerCase() === address?.toLowerCase() ? `<button class="btn" onclick="window.submitDeliveryPrompt('task-${i}')">Submit Delivery</button>` : ''}
         ${task.status === 'DELIVERED' ? `<button class="btn" onclick="window.verifyTask('task-${i}')">Verify</button>` : ''}
-        ${task.status === 'DISPUTED' && task.poster === address ? `<button class="btn btn-refund" onclick="window.resolveDispute('task-${i}')">Resolve & Refund</button>` : ''}
+        ${task.status === 'DISPUTED' && task.poster && task.poster.toLowerCase() === address?.toLowerCase() ? `<button class="btn btn-refund" onclick="window.resolveDispute('task-${i}')">Resolve & Refund</button>` : ''}
       </div>`;
       allHtml += html;
       if (status === 'OPEN') { openHtml += html; openCount++; }
