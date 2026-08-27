@@ -78,7 +78,7 @@
   <h1>Agent Coordination</h1><span class="badge">GenLayer</span>
   <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
     <span id="walletStatus" class="wallet-status">Not connected</span>
-    <button class="btn btn-secondary" id="connectBtn" onclick="client ? disconnectWallet() : connectWallet()">Connect</button>
+    <button class="btn btn-secondary" id="connectBtn" onclick="toggleWallet()">Connect</button>
   </div>
 </div>
 <p class="sub">
@@ -437,7 +437,16 @@ async function disconnectWallet() {
   $('allTasks').innerHTML = '<div class="loading">Loading…</div>';
 }
 
+async function toggleWallet() {
+  if (client) {
+    await disconnectWallet();
+  } else {
+    await connectWallet();
+  }
+}
+
 // Expose to window for inline onclick
+window.toggleWallet = toggleWallet;
 window.connectWallet = connectWallet;
 window.disconnectWallet = disconnectWallet;
 window.postTask = postTask;
