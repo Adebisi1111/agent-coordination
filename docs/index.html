@@ -78,7 +78,7 @@
   <h1>Agent Coordination</h1><span class="badge">GenLayer</span>
   <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
     <span id="walletStatus" class="wallet-status">Not connected</span>
-    <button class="btn btn-secondary" id="connectBtn" onclick="connectWallet()">Connect</button>
+    <button class="btn btn-secondary" id="connectBtn" onclick="client ? disconnectWallet() : connectWallet()">Connect</button>
   </div>
 </div>
 <p class="sub">
@@ -221,8 +221,8 @@ async function connectWallet() {
     });
     $('walletStatus').textContent = short(address);
     $('walletStatus').classList.add('connected');
-    $('connectBtn').textContent = 'Connected';
-    $('connectBtn').disabled = true;
+    $('connectBtn').textContent = 'Disconnect';
+    $('connectBtn').disabled = false;
     const wei = await window.ethereum.request({ method: 'eth_getBalance', params: [address, 'latest'] });
     const agentRaw = await publicClient().readContract({ address: CONTRACT, functionName: 'getAgent', args: [address] });
     const agent = agentRaw ? JSON.parse(agentRaw) : { exists: false };
@@ -424,8 +424,22 @@ async function cancelTask(id) {
   }
 }
 
+async function disconnectWallet() {
+  client = null;
+  address = null;
+  $('walletStatus').textContent = 'Not connected';
+  $('walletStatus').classList.remove('connected');
+  $('connectBtn').textContent = 'Connect';
+  $('connectBtn').disabled = false;
+  $('yourRep').textContent = '…';
+  $('taskCount').textContent = '…';
+  $('openTasks').innerHTML = '<div class="loading">Loading tasks…</div>';
+  $('allTasks').innerHTML = '<div class="loading">Loading…</div>';
+}
+
 // Expose to window for inline onclick
 window.connectWallet = connectWallet;
+window.disconnectWallet = disconnectWallet;
 window.claimTask = claimTask;
 window.cancelTask = cancelTask;
 window.verifyTask = verifyTask;
