@@ -263,11 +263,15 @@ async function loadTasks() {
 
     let openHtml = '', allHtml = '';
     let openCount = 0;
+    const delivered = [];
     for (let i = 1; i <= total; i++) {
       const taskRaw = await c.readContract({ address: CONTRACT, functionName: 'getTask', args: [`task-${i}`] });
       const task = taskRaw ? JSON.parse(taskRaw) : { exists: false };
       if (!task || !task.exists) continue;
       const status = task.status || 'OPEN';
+      if (status === 'DELIVERED' && task.assignee && task.assignee.toLowerCase() === address?.toLowerCase()) {
+        delivered.push(`task-${i}`);
+      }
       const html = `<div class="item">
         <h3>${task.description || 'Task ' + i}</h3>
         <div class="meta">
@@ -286,9 +290,28 @@ async function loadTasks() {
     }
     $('openTasks').innerHTML = openCount ? openHtml : '<div class="empty">No open tasks.</div>';
     $('allTasks').innerHTML = allHtml || '<div class="empty">No tasks yet.</div>';
+
+    // Auto-prompt for delivered tasks
+    if (delivered.length > 0) {
+      showVerifyPrompt(delivered[0]);
+    }
   } catch (e) {
     $('openTasks').innerHTML = `<div class="empty">Error: ${e.message}</div>`;
   }
+}
+
+function showVerifyPrompt(taskId) {
+  const existing = $('verifyPrompt');
+  if (existing) existing.remove();
+  const banner = document.createElement('div');
+  banner.id = 'verifyPrompt';
+  banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:999;background:linear-gradient(135deg,#e3b341,#f85149);color:#000;padding:14px 18px;text-align:center;font-weight:700;font-size:14px;cursor:pointer;box-shadow:0 4px 20px rgba(0,0,0,0.5);';
+  banner.innerHTML = `📋 Task ${taskId} is ready for verification! Click here to sign the verify transaction →`;
+  banner.onclick = () => {
+    banner.remove();
+    verifyTask(taskId);
+  };
+  document.body.appendChild(banner);
 }
 
 async function loadAgents() {
