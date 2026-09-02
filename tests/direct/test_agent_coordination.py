@@ -424,3 +424,168 @@ def test_empty_evidence_fails_verification(direct_vm, direct_deploy,
     contract.verifyDelivery(task_id)
 
     assert json.loads(contract.getTask(task_id))["status"] == "DISPUTED"
+
+
+def test_verifyDelivery_replay_guard(direct_vm, direct_deploy,
+                                      direct_alice, direct_bob):
+    """A task cannot be verified twice — the second verifyDelivery call
+    must revert even if the first one succeeded."""
+    contract = direct_deploy("contracts/agent_coordination.py")
+
+    direct_vm.sender = direct_alice
+    direct_vm.value = 2000000000000000000
+    contract.registerAgent("writing")
+
+    direct_vm.sender = direct_bob
+    direct_vm.value = 500000000000000000
+    task_id = contract.postTask("Write about AI")
+
+    direct_vm.sender = direct_alice
+    contract.claimTask(task_id)
+    contract.submitDelivery(task_id, "https://example.com/ai-blog")
+
+    direct_vm.mock_web(r".*example.*", {"status": 200, "body": "AI is transformative..."})
+    direct_vm.mock_llm(r".*", json.dumps({"verdict": "PASS", "reason": "fulfills task"}))
+    contract.verifyDelivery(task_id)
+
+    # First verify succeeded — task is now VERIFIED
+    assert json.loads(contract.getTask(task_id))["status"] == "VERIFIED"
+
+    # Second verify must revert (status is no longer DELIVERED)
+    with direct_vm.expect_revert("No delivery to verify"):
+        contract.verifyDelivery(task_id)
+
+
+# --------------------------------------------------------------------------
+# STEWARD REQUEST: Verify emitted external transfers and expected balance
+# deltas match actual transfer amounts. These tests ensure the contract
+# correctly tracks and emits payouts/refunds.
+# --------------------------------------------------------------------------
+
+
+def test_payout_emitted_transfer_matches_reward(direct_vm, direct_deploy,
+                                                direct_alice, direct_bob):
+    """After PASS verification, the emitted payout transfer must match
+    the reward amount and be addressed to the agent."""
+    contract = direct_deploy("contracts/agent_coordination.py")
+
+    direct_vm.sender = direct_alice
+    direct_vm.value = 2000000000000000000
+    contract.registerAgent("writing")
+
+    direct_vm.sender = direct_bob
+    direct_vm.value = 500000000000000000
+    task_id = contract.postTask("Write about AI")
+
+    direct_vm.sender = direct_alice
+    contract.claimTask(task_id)
+    contract.submitDelivery(task_id, "https://example.com/ai-blog")
+
+    direct_vm.mock_web(r".*example.*", {"status": 200, "body": "AI is transformative..."})
+    direct_vm.mock_llm(r".*", json.dumps({"verdict": "PASS", "reason": "fulfills task"}))
+    contract.verifyDelivery(task_id)
+
+    # Task must be VERIFIED
+    assert json.loads(contract.getTask(task_id))["status"] == "VERIFIED"
+
+    # Emitted transfer must exist and match reward
+    transfers = json.loads(contract.getEmittedTransfers())
+    payouts = [v for v in transfers.values() if json.loads(v)["type"] == "payout"]
+    assert len(payouts) == 1, f"Expected 1 payout, got {len(payouts)}"
+
+    payout_data = json.loads(payouts[0])
+    assert payout_data["amount"] == 500000000000000000, \
+        f"Payout amount mismatch: {payout_data['amount']}"
+    assert payout_data["to"] == _hex(direct_alice), \
+        f"Payout recipient mismatch: {payout_data['to']}"
+    assert payout_data["type"] == "payout"
+
+
+def test_refund_emitted_transfer_matches_reward(direct_vm, direct_deploy,
+                                                direct_alice, direct_bob):
+    """After dispute resolution, the emitted refund transfer must match
+    the reward amount and be addressed to the poster."""
+    contract = direct_deploy("contracts/agent_coordination.py")
+
+    direct_vm.sender = direct_alice
+    direct_vm.value = 2000000000000000000
+    contract.registerAgent("writing")
+
+    direct_vm.sender = direct_bob
+    direct_vm.value = 500000000000000000
+    task_id = contract.postTask("Write about AI")
+
+    direct_vm.sender = direct_alice
+    contract.claimTask(task_id)
+    contract.submitDelivery(task_id, "https://example.com/off-topic")
+
+    direct_vm.mock_web(r".*example.*", {"status": 200, "body": "Cooking recipes..."})
+    direct_vm.mock_llm(r".*", json.dumps({"verdict": "FAIL", "reason": "off topic"}))
+    contract.verifyDelivery(task_id)
+
+    direct_vm.sender = direct_bob
+    contract.resolveDispute(task_id)
+
+    # Task must be REFUNDED
+    assert json.loads(contract.getTask(task_id))["status"] == "REFUNDED"
+
+    # Emitted transfer must exist and match reward
+    transfers = json.loads(contract.getEmittedTransfers())
+    refunds = [v for v in transfers.values() if json.loads(v)["type"] == "refund"]
+    assert len(refunds) == 1, f"Expected 1 refund, got {len(refunds)}"
+
+    refund_data = json.loads(refunds[0])
+    assert refund_data["amount"] == 500000000000000000, \
+        f"Refund amount mismatch: {refund_data['amount']}"
+    assert refund_data["to"] == _hex(direct_bob), \
+        f"Refund recipient mismatch: {refund_data['to']}"
+    assert refund_data["type"] == "refund"
+
+
+def test_expected_balance_deltas_match_emitted_transfers(direct_vm, direct_deploy,
+                                                         direct_alice, direct_bob):
+    """The _expected_balances deltas must match the emitted transfer amounts.
+    This verifies contract-internal accounting is consistent with external transfers."""
+    contract = direct_deploy("contracts/agent_coordination.py")
+
+    direct_vm.sender = direct_alice
+    direct_vm.value = 2000000000000000000
+    contract.registerAgent("writing")
+
+    reward = 500000000000000000
+    direct_vm.sender = direct_bob
+    direct_vm.value = reward
+    
+    # Track balances BEFORE posting
+    poster_before = int(contract.getExpectedBalance(_hex(direct_bob)))
+    agent_before = int(contract.getExpectedBalance(_hex(direct_alice)))
+    
+    task_id = contract.postTask("Write about AI")
+
+    direct_vm.sender = direct_alice
+    contract.claimTask(task_id)
+    contract.submitDelivery(task_id, "https://example.com/ai-blog")
+
+    direct_vm.mock_web(r".*example.*", {"status": 200, "body": "AI is transformative..."})
+    direct_vm.mock_llm(r".*", json.dumps({"verdict": "PASS", "reason": "fulfills task"}))
+    contract.verifyDelivery(task_id)
+
+    # Track balances after
+    poster_after = int(contract.getExpectedBalance(_hex(direct_bob)))
+    agent_after = int(contract.getExpectedBalance(_hex(direct_alice)))
+
+    # Verify deltas match reward
+    assert agent_after - agent_before == reward, \
+        f"Agent delta mismatch: {agent_after - agent_before} != {reward}"
+    assert poster_after - poster_before == -reward, \
+        f"Poster delta mismatch: {poster_after - poster_before} != {-reward}"
+
+    # Verify emitted transfer matches the delta
+    transfers = json.loads(contract.getEmittedTransfers())
+    payouts = [v for v in transfers.values() if json.loads(v)["type"] == "payout"]
+    assert len(payouts) == 1
+    payout_data = json.loads(payouts[0])
+    assert payout_data["amount"] == reward, \
+        f"Emitted payout amount mismatch: {payout_data['amount']} != {reward}"
+    assert payout_data["amount"] == agent_after - agent_before, \
+        f"Emitted payout doesn't match agent delta"

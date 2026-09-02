@@ -90,6 +90,7 @@
   <a href="#agents" data-tab="agents">Agents</a>
   <a href="#post" data-tab="post">Post Task</a>
   <a href="#register" data-tab="register">Register Agent</a>
+  <a href="#technocore" data-tab="technocore">Technocore</a>
 </div>
 
 <!-- TASKS -->
@@ -147,6 +148,41 @@
       <input type="number" id="agentStake" placeholder="1.00" step="0.01" min="1">
     </div>
     <button class="btn" id="regBtn" onclick="registerAgent()">Register</button>
+  </div>
+</div>
+
+<!-- TECHNOCORE -->
+<div id="tab-technocore" style="display:none">
+  <div class="section">
+    <h2>Technocore Identity</h2>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">
+      Link your Technocore DID to your wallet for signed agent communication.
+    </p>
+    <div id="technocoreStatus" style="margin-bottom:12px">
+      <span class="wallet-status" id="tcStatus">No identity</span>
+    </div>
+    <div class="field">
+      <label>Generate New Identity</label>
+      <button class="btn" onclick="generateTechnocoreID()">Generate DID</button>
+    </div>
+    <div class="field">
+      <label>Or Restore from Seed</label>
+      <input type="text" id="tcSeed" placeholder="64-character hex seed">
+    </div>
+    <button class="btn btn-secondary" onclick="restoreTechnocoreID()">Restore</button>
+    <div id="tcInfo" style="margin-top:12px;font-size:11px;color:var(--muted);word-break:break-all"></div>
+  </div>
+  <div class="section">
+    <h2>Task Messages</h2>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">
+      View signed Technocore messages for a task.
+    </p>
+    <div class="field">
+      <label>Task ID</label>
+      <input type="text" id="tcTaskId" placeholder="task-1">
+    </div>
+    <button class="btn" onclick="loadTechnocoreMessages()">Load Messages</button>
+    <div id="tcMessages" style="margin-top:12px"></div>
   </div>
 </div>
 
@@ -479,6 +515,103 @@ window.cancelTask = cancelTask;
 window.verifyTask = verifyTask;
 window.submitDeliveryPrompt = submitDeliveryPrompt;
 window.resolveDispute = resolveDispute;
+window.generateTechnocoreID = generateTechnocoreID;
+window.restoreTechnocoreID = restoreTechnocoreID;
+window.loadTechnocoreMessages = loadTechnocoreMessages;
+
+// Technocore state
+let tcIdentity = null;
+let tcClient = null;
+
+async function generateTechnocoreID() {
+  try {
+    const resp = await fetch('/technocore/generate', { method: 'POST' });
+    const data = await resp.json();
+    tcIdentity = data;
+    tcClient = { identity: data.did };
+    $('tcStatus').textContent = 'DID: ' + data.did.slice(0, 20) + '…';
+    $('tcStatus').classList.add('connected');
+    $('tcInfo').innerHTML = `
+      <strong>DID:</strong> ${data.did}<br>
+      <strong>Seed (save this!):</strong> ${data.seed}<br>
+      <strong>Address:</strong> ${data.address}
+    `;
+    // Store in localStorage for persistence
+    localStorage.setItem('tcIdentity', JSON.stringify(data));
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+async function restoreTechnocoreID() {
+  const seed = $('tcSeed').value.trim();
+  if (!seed || seed.length !== 64) {
+    alert('Enter a valid 64-character hex seed');
+    return;
+  }
+  try {
+    const resp = await fetch('/technocore/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ seed })
+    });
+    const data = await resp.json();
+    tcIdentity = data;
+    tcClient = { identity: data.did };
+    $('tcStatus').textContent = 'DID: ' + data.did.slice(0, 20) + '…';
+    $('tcStatus').classList.add('connected');
+    $('tcInfo').innerHTML = `
+      <strong>DID:</strong> ${data.did}<br>
+      <strong>Seed:</strong> ${data.seed}<br>
+      <strong>Address:</strong> ${data.address}
+    `;
+    localStorage.setItem('tcIdentity', JSON.stringify(data));
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+async function loadTechnocoreMessages() {
+  const taskId = $('tcTaskId').value.trim();
+  if (!taskId) {
+    alert('Enter a task ID');
+    return;
+  }
+  try {
+    const resp = await fetch(`/technocore/messages/${taskId}`);
+    const data = await resp.json();
+    const messages = data.messages || [];
+    if (messages.length === 0) {
+      $('tcMessages').innerHTML = '<div class="empty">No messages found.</div>';
+      return;
+    }
+    let html = '';
+    for (const msg of messages) {
+      const verified = msg.verified ? '✓' : '?';
+      html += `<div class="item" style="font-size:11px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+          <span class="addr">${msg.frm.slice(0, 12)}…</span>
+          <span style="color:var(--muted)">seq ${msg.seq} ${verified}</span>
+        </div>
+        <div style="word-break:break-all">${msg.text}</div>
+      </div>`;
+    }
+    $('tcMessages').innerHTML = html;
+  } catch (e) {
+    $('tcMessages').innerHTML = `<div class="empty">Error: ${e.message}</div>`;
+  }
+}
+
+// Restore identity on page load
+const savedIdentity = localStorage.getItem('tcIdentity');
+if (savedIdentity) {
+  try {
+    tcIdentity = JSON.parse(savedIdentity);
+    tcClient = { identity: tcIdentity.did };
+    $('tcStatus').textContent = 'DID: ' + tcIdentity.did.slice(0, 20) + '…';
+    $('tcStatus').classList.add('connected');
+  } catch (e) {}
+}
 
 // Initial load
 loadTasks();

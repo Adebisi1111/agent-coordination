@@ -20,6 +20,7 @@ class Agent:
     stake: u256
     reputation: u256
     active: bool
+    did_hash: str  # Hash of agent's Technocore DID (privacy-preserving)
 
 
 @allow_storage
@@ -32,6 +33,7 @@ class Task:
     assignee: str
     delivery_url: str
     verification: str
+    technocore_room: str  # Technocore room name for this task
 
 
 @gl.evm.contract_interface
@@ -67,7 +69,7 @@ class AgentCoordination(gl.Contract):
         return str(int(self._expected_balances.get(addr, i256(0))))
 
     @gl.public.write.payable
-    def registerAgent(self, capabilities: str) -> None:
+    def registerAgent(self, capabilities: str, did_hash: str = "") -> None:
         sender = gl.message.sender_address.as_hex
         if gl.message.value < self.min_stake:
             raise gl.vm.UserError("Stake below minimum (1 GEN)")
@@ -79,15 +81,18 @@ class AgentCoordination(gl.Contract):
                 stake=gl.message.value,
                 reputation=u256(0),
                 active=True,
+                did_hash=did_hash,
             )
         else:
             existing.stake += gl.message.value
             existing.capabilities = capabilities
             existing.active = True
+            if did_hash:
+                existing.did_hash = did_hash
             self.agents[sender] = existing
 
     @gl.public.write.payable
-    def postTask(self, description: str) -> str:
+    def postTask(self, description: str, technocore_room: str = "") -> str:
         if gl.message.value <= u256(0):
             raise gl.vm.UserError("Reward must be > 0")
         task_id = f"task-{self.task_count + u256(1)}"
@@ -99,6 +104,7 @@ class AgentCoordination(gl.Contract):
             assignee="",
             delivery_url="",
             verification="PENDING",
+            technocore_room=technocore_room,
         )
         self.task_count += u256(1)
         # The poster locks the reward into escrow
@@ -142,6 +148,12 @@ class AgentCoordination(gl.Contract):
             raise gl.vm.UserError("Task not found")
         if task.status != "DELIVERED":
             raise gl.vm.UserError("No delivery to verify")
+        if task.verification == "IN_PROGRESS":
+            raise gl.vm.UserError("Verification already in progress")
+
+        # Mark verification in progress to prevent replay during consensus
+        task.verification = "IN_PROGRESS"
+        self.tasks[task_id] = task
 
         ALLOWED = ("PASS", "FAIL")
 
@@ -267,6 +279,7 @@ class AgentCoordination(gl.Contract):
             "assignee": t.assignee,
             "verification": t.verification,
             "poster": t.poster,
+            "technocore_room": t.technocore_room,
         })
 
     @gl.public.view
@@ -281,6 +294,7 @@ class AgentCoordination(gl.Contract):
             "stake": int(a.stake),
             "reputation": int(a.reputation),
             "active": a.active,
+            "did_hash": a.did_hash,
         })
 
     @gl.public.view
