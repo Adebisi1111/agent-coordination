@@ -10,12 +10,11 @@ const posterClient = createClient({ chain: chains.testnetBradbury, account: post
 
 async function main() {
   console.log('=== FUNDING AGENT ===');
-  console.log('Sending 2 GEN to agent...');
   
   try {
     const hash = await posterClient.sendTransaction({
       to: '0x782abaE1C6C4aec093C964785a4c10C0991Fa01A',
-      value: 2000000000000000000n,
+      value: 3000000000000000000n,
     });
     console.log('Fund tx:', hash);
   } catch (e) {

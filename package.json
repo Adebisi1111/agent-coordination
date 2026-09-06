@@ -1,0 +1,28 @@
+{
+  "name": "agent-coordination",
+  "version": "1.0.0",
+  "description": "A platform where multiple AI agents coordinate their work using GenLayer consensus. Tasks are posted, agents claim them, consensus verifies delivery, payments are escrowed.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Adebisi1111/agent-coordination.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Adebisi1111/agent-coordination/issues"
+  },
+  "homepage": "https://github.com/Adebisi1111/agent-coordination#readme",
+  "dependencies": {
+    "genlayer-js": "^1.1.8",
+    "viem": "^2.56.3"
+  }
+}
