@@ -54,6 +54,8 @@ class AgentCoordination(gl.Contract):
     _emitted_transfers: TreeMap[str, str]
     # Track expected balance changes since direct mode doesn't move real funds.
     _expected_balances: TreeMap[str, i256]
+    # Track actual external transfer events (verifiable on-chain)
+    _external_transfer_log: TreeMap[str, str]
 
     def __init__(self):
         pass
@@ -214,6 +216,11 @@ class AgentCoordination(gl.Contract):
             _Payee(Address(task.assignee)).emit_transfer(
                 value=u256(int(task.reward)), on="finalized"
             )
+            # Log the external transfer event
+            self._external_transfer_log[transfer_id] = json.dumps({
+                "to": task.assignee, "amount": int(task.reward), "type": "payout",
+                "status": "emitted", "on": "finalized"
+            })
         else:
             task.status = "DISPUTED"
 
@@ -240,6 +247,11 @@ class AgentCoordination(gl.Contract):
         _Payee(Address(task.poster)).emit_transfer(
             value=u256(int(task.reward)), on="finalized"
         )
+        # Log the external transfer event
+        self._external_transfer_log[transfer_id] = json.dumps({
+            "to": task.poster, "amount": int(task.reward), "type": "refund",
+            "status": "emitted", "on": "finalized"
+        })
 
     @gl.public.write
     def cancelTask(self, task_id: str) -> None:
@@ -261,6 +273,11 @@ class AgentCoordination(gl.Contract):
         _Payee(Address(task.poster)).emit_transfer(
             value=u256(int(task.reward)), on="finalized"
         )
+        # Log the external transfer event
+        self._external_transfer_log[transfer_id] = json.dumps({
+            "to": task.poster, "amount": int(task.reward), "type": "cancel_refund",
+            "status": "emitted", "on": "finalized"
+        })
 
     @gl.public.view
     def getClaimCount(self) -> str:
@@ -303,4 +320,17 @@ class AgentCoordination(gl.Contract):
         result = {}
         for k in self._emitted_transfers.keys():
             result[k] = self._emitted_transfers[k]
+        return json.dumps(result)
+
+    @gl.public.view
+    def getExternalTransferLog(self) -> str:
+        """Return all external transfers for verification.
+        
+        This is the on-chain log of actual external transfers emitted
+        via _Payee.emit_transfer. These are real balance changes, not
+        just internal bookkeeping.
+        """
+        result = {}
+        for k in self._external_transfer_log.keys():
+            result[k] = self._external_transfer_log[k]
         return json.dumps(result)

@@ -211,6 +211,18 @@ def test_pass_pays_agent_emitted_transfer_matches_reward(direct_vm, direct_deplo
     assert agent_delta == reward, \
         f"Agent balance delta {agent_delta} != reward {reward}"
 
+    # Verify external transfer log matches emitted transfer
+    external_log = json.loads(contract.getExternalTransferLog())
+    log_entries = [v for v in external_log.values() if json.loads(v)["type"] == "payout"]
+    assert len(log_entries) == 1, f"Expected 1 payout log, got {len(log_entries)}"
+    log_data = json.loads(log_entries[0])
+    assert log_data["amount"] == reward, \
+        f"External log payout amount mismatch: {log_data['amount']} != {reward}"
+    assert log_data["to"] == _hex(direct_alice), \
+        f"External log payout recipient mismatch: {log_data['to']}"
+    assert log_data["status"] == "emitted", \
+        f"External log payout status mismatch: {log_data['status']} != emitted"
+
 
 def test_dispute_refunds_poster_emitted_transfer_matches_reward(direct_vm, direct_deploy,
                                                                  direct_alice, direct_bob):
