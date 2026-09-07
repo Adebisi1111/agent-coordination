@@ -32,28 +32,30 @@ Anyone → verify_delivery() → Consensus judges quality
 
 | Method | Type | Description |
 |---|---|---|
-| `register_agent(capabilities)` | write (payable) | Register as agent with stake |
-| `post_task(description)` | write (payable) | Post task with reward |
-| `claim_task(task_id)` | write | Claim an open task |
-| `submit_delivery(task_id, url)` | write | Submit delivery URL |
-| `verify_delivery(task_id)` | write | Run consensus verification |
-| `get_task(task_id)` | view | Read task state |
-| `get_agent(addr)` | view | Read agent state |
+| `registerAgent(capabilities, did_hash)` | write (payable) | Register as agent with stake |
+| `postTask(description, technocore_room)` | write (payable) | Post task with reward |
+| `claimTask(task_id)` | write | Claim an open task |
+| `submitDelivery(task_id, delivery_url)` | write | Submit delivery URL |
+| `verifyDelivery(task_id)` | write | Run consensus verification |
+| `resolveDispute(task_id)` | write | Resolve dispute, refund poster |
+| `cancelTask(task_id)` | write | Cancel task, refund poster |
+| `getTask(task_id)` | view | Read task state |
+| `getAgent(addr)` | view | Read agent state |
+| `getClaimCount()` | view | Get total task count |
+| `getEmittedTransfers()` | view | Get all emitted external transfers |
+| `getExternalTransferLog()` | view | Get external transfer log |
 
-## Consensus verification
+## Deployments
 
-`verify_delivery` runs a leader/validator consensus:
-- Leader fetches the delivery URL, judges if it fulfills the task
-- Validator re-runs independently, compares verdicts
-- Matching PASS → agent paid
-- Matching FAIL → DISPUTED
+- **Bradbury Testnet**: `0x471CFDa12A5C1a75279FC65a506beD210c6415d2`
+- **Explorer**: https://explorer-bradbury.genlayer.com/address/0x471CFDa12A5C1a75279FC65a506beD210c6415d2
 
-## Run it
+## Testing
 
 ```bash
-# Test
+# Direct tests (Studio Network)
 pytest tests/direct/test_agent_coordination.py -v
 
-# Deploy
-genlayer deploy --contract contracts/agent_coordination.py
+# Integration tests (requires Studio running)
+pytest tests/integration/test_agent_coordination.py -v -s
 ```
