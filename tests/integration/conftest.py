@@ -6,8 +6,8 @@ from gltest.accounts import get_accounts
 from gltest.contracts import Contract
 
 
-# Existing deployed contract on Bradbury
-BRADBURY_CONTRACT_ADDRESS = "0x471CFDa12A5C1a75279FC65a506beD210c6415d2"
+# Existing deployed contract on Studio Network
+STUDIO_CONTRACT_ADDRESS = "0x50BD0a5C0AF880c5DC5DDbc899F8B6E2e7Af48a1"
 
 
 @pytest.fixture(scope="session")
@@ -32,10 +32,10 @@ def integration_deploy():
     def _deploy(contract_path):
         client = get_gl_client()
         # Get schema from existing deployed contract
-        schema = client.get_contract_schema(BRADBURY_CONTRACT_ADDRESS)
+        schema = client.get_contract_schema(STUDIO_CONTRACT_ADDRESS)
         # Use existing deployed contract
         return Contract.new(
-            address=BRADBURY_CONTRACT_ADDRESS,
+            address=STUDIO_CONTRACT_ADDRESS,
             schema=schema,
             account=get_accounts()[0]
         )
