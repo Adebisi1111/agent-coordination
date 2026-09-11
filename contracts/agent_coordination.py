@@ -44,8 +44,6 @@ class AgentCoordination(gl.Contract):
     tasks: TreeMap[str, Task]
     task_count: u256
     min_stake: u256 = u256(1000000000000000)  # 0.001 GEN for testing
-    _emitted_transfers: TreeMap[str, str]
-    _external_transfer_log: TreeMap[str, str]
 
     def __init__(self):
         pass
@@ -123,7 +121,7 @@ class AgentCoordination(gl.Contract):
 
     @gl.public.write
     def approveDelivery(self, task_id: str) -> None:
-        """Direct approval without AI verification - for testing payouts."""
+        """Approve delivery and pay agent."""
         task = self.tasks.get(task_id, None)
         if task is None:
             raise gl.vm.UserError("Task not found")
@@ -137,19 +135,24 @@ class AgentCoordination(gl.Contract):
             agent.reputation += u256(1)
             self.agents[task.assignee] = agent
         # Use _Recipient.emit_transfer() for contract-to-EOA transfer
-        transfer_id = f"payout-{task_id}"
-        self._emitted_transfers[transfer_id] = json.dumps({
-            "to": task.assignee, "amount": int(task.reward), "type": "payout"
-        })
         _Recipient(Address(task.assignee)).emit_transfer(value=u256(int(task.reward)))
-        self._external_transfer_log[transfer_id] = json.dumps({
-            "to": task.assignee, "amount": int(task.reward), "type": "payout",
-            "status": "emitted"
-        })
+        self.tasks[task_id] = task
+
+    @gl.public.write
+    def rejectDelivery(self, task_id: str) -> None:
+        """Reject delivery and mark as disputed."""
+        task = self.tasks.get(task_id, None)
+        if task is None:
+            raise gl.vm.UserError("Task not found")
+        if task.status != "DELIVERED":
+            raise gl.vm.UserError("No delivery to reject")
+        task.status = "DISPUTED"
+        task.verification = "FAIL"
         self.tasks[task_id] = task
 
     @gl.public.write
     def resolveDispute(self, task_id: str) -> None:
+        """Resolve dispute and refund poster."""
         task = self.tasks.get(task_id, None)
         if task is None:
             raise gl.vm.UserError("Task not found")
@@ -161,15 +164,8 @@ class AgentCoordination(gl.Contract):
 
         task.status = "REFUNDED"
         self.tasks[task_id] = task
-        transfer_id = f"refund-{task_id}"
-        self._emitted_transfers[transfer_id] = json.dumps({
-            "to": task.poster, "amount": int(task.reward), "type": "refund"
-        })
+        # Use _Recipient.emit_transfer() for contract-to-EOA transfer
         _Recipient(Address(task.poster)).emit_transfer(value=u256(int(task.reward)))
-        self._external_transfer_log[transfer_id] = json.dumps({
-            "to": task.poster, "amount": int(task.reward), "type": "refund",
-            "status": "emitted"
-        })
 
     @gl.public.write
     def cancelTask(self, task_id: str) -> None:
@@ -183,15 +179,8 @@ class AgentCoordination(gl.Contract):
             raise gl.vm.UserError("Only the poster can cancel")
         task.status = "CANCELLED"
         self.tasks[task_id] = task
-        transfer_id = f"cancel-{task_id}"
-        self._emitted_transfers[transfer_id] = json.dumps({
-            "to": task.poster, "amount": int(task.reward), "type": "cancel_refund"
-        })
+        # Use _Recipient.emit_transfer() for contract-to-EOA transfer
         _Recipient(Address(task.poster)).emit_transfer(value=u256(int(task.reward)))
-        self._external_transfer_log[transfer_id] = json.dumps({
-            "to": task.poster, "amount": int(task.reward), "type": "cancel_refund",
-            "status": "emitted"
-        })
 
     @gl.public.view
     def getClaimCount(self) -> str:
@@ -227,17 +216,3 @@ class AgentCoordination(gl.Contract):
             "active": a.active,
             "did_hash": a.did_hash,
         })
-
-    @gl.public.view
-    def getEmittedTransfers(self) -> str:
-        result = {}
-        for k in self._emitted_transfers.keys():
-            result[k] = self._emitted_transfers[k]
-        return json.dumps(result)
-
-    @gl.public.view
-    def getExternalTransferLog(self) -> str:
-        result = {}
-        for k in self._external_transfer_log.keys():
-            result[k] = self._external_transfer_log[k]
-        return json.dumps(result)

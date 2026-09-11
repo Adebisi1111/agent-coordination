@@ -46,7 +46,7 @@ def test_claim_and_deliver(direct_vm, direct_deploy, direct_alice, direct_bob):
 
 
 def test_approveDelivery_pays_agent(direct_vm, direct_deploy, direct_alice, direct_bob):
-    """Approve delivery and verify emitted payout transfer."""
+    """Approve delivery and verify agent is paid."""
     contract = direct_deploy("contracts/agent_coordination.py")
     direct_vm.sender = direct_alice
     direct_vm.value = 2000000000000000000
@@ -101,6 +101,9 @@ def test_full_escrow_lifecycle_dispute(direct_vm, direct_deploy, direct_alice, d
     contract.claimTask(task_id)
     contract.submitDelivery(task_id, "https://example.com/off-topic")
     direct_vm.sender = direct_bob
+    contract.rejectDelivery(task_id)
+    out = json.loads(contract.getTask(task_id))
+    assert out["status"] == "DISPUTED"
     contract.resolveDispute(task_id)
     assert json.loads(contract.getTask(task_id))["status"] == "REFUNDED"
 
@@ -116,6 +119,8 @@ def test_resolveDispute_only_poster(direct_vm, direct_deploy, direct_alice, dire
     direct_vm.sender = direct_alice
     contract.claimTask(task_id)
     contract.submitDelivery(task_id, "https://example.com/off-topic")
+    direct_vm.sender = direct_bob
+    contract.rejectDelivery(task_id)
     direct_vm.sender = direct_alice
     with direct_vm.expect_revert("Only the poster can resolve a dispute"):
         contract.resolveDispute(task_id)
@@ -139,14 +144,14 @@ def test_get_claim_count(direct_vm, direct_deploy, direct_alice, direct_bob):
 
 
 # --------------------------------------------------------------------------
-# STEWARD REQUEST: verify emitted transfers match expected balance deltas.
+# STEWARD REQUEST: verify real balance changes, not internal logs.
 # These tests MUST fail if the real transfer amount is wrong.
 # --------------------------------------------------------------------------
 
 
-def test_pass_pays_agent_emitted_transfer_matches_reward(direct_vm, direct_deploy,
-                                                          direct_alice, direct_bob):
-    """PASS: emitted payout transfer matches the reward amount exactly."""
+def test_pass_pays_agent_real_balance(direct_vm, direct_deploy,
+                                       direct_alice, direct_bob):
+    """PASS: agent's balance increases by reward amount."""
     contract = direct_deploy("contracts/agent_coordination.py")
 
     reward = 500000000000000000
@@ -162,35 +167,23 @@ def test_pass_pays_agent_emitted_transfer_matches_reward(direct_vm, direct_deplo
     direct_vm.sender = direct_alice
     contract.claimTask(task_id)
     contract.submitDelivery(task_id, "https://example.com/ai-blog")
+
+    # Check agent balance before approval
+    balance_before = direct_vm.get_balance(direct_alice)
+
     contract.approveDelivery(task_id)
 
-    # Verify emitted external transfer matches reward
-    transfers = json.loads(contract.getEmittedTransfers())
-    payouts = [v for v in transfers.values() if json.loads(v)["type"] == "payout"]
-    assert len(payouts) == 1, f"Expected 1 payout, got {len(payouts)}"
+    # Check agent balance after approval
+    balance_after = direct_vm.get_balance(direct_alice)
 
-    payout_data = json.loads(payouts[0])
-    assert payout_data["amount"] == reward, \
-        f"Payout amount mismatch: {payout_data['amount']} != {reward}"
-    assert payout_data["to"] == _hex(direct_alice), \
-        f"Payout recipient mismatch: {payout_data['to']}"
-
-    # Verify external transfer log matches emitted transfer
-    external_log = json.loads(contract.getExternalTransferLog())
-    log_entries = [v for v in external_log.values() if json.loads(v)["type"] == "payout"]
-    assert len(log_entries) == 1, f"Expected 1 payout log, got {len(log_entries)}"
-    log_data = json.loads(log_entries[0])
-    assert log_data["amount"] == reward, \
-        f"External log payout amount mismatch: {log_data['amount']} != {reward}"
-    assert log_data["to"] == _hex(direct_alice), \
-        f"External log payout recipient mismatch: {log_data['to']}"
-    assert log_data["status"] == "emitted", \
-        f"External log payout status mismatch: {log_data['status']} != emitted"
+    # Agent should have received the reward
+    assert balance_after == balance_before + reward, \
+        f"Agent balance mismatch: {balance_after} != {balance_before} + {reward}"
 
 
-def test_dispute_refunds_poster_emitted_transfer_matches_reward(direct_vm, direct_deploy,
-                                                                 direct_alice, direct_bob):
-    """Dispute: emitted refund transfer matches the reward amount exactly."""
+def test_dispute_refunds_poster_real_balance(direct_vm, direct_deploy,
+                                              direct_alice, direct_bob):
+    """Dispute: poster's balance increases by refund amount."""
     contract = direct_deploy("contracts/agent_coordination.py")
 
     reward = 500000000000000000
@@ -208,23 +201,24 @@ def test_dispute_refunds_poster_emitted_transfer_matches_reward(direct_vm, direc
     contract.submitDelivery(task_id, "https://example.com/off-topic")
 
     direct_vm.sender = direct_bob
+    contract.rejectDelivery(task_id)
+
+    # Check poster balance before dispute resolution
+    balance_before = direct_vm.get_balance(direct_bob)
+
     contract.resolveDispute(task_id)
 
-    # Verify emitted external transfer matches reward
-    transfers = json.loads(contract.getEmittedTransfers())
-    refunds = [v for v in transfers.values() if json.loads(v)["type"] == "refund"]
-    assert len(refunds) == 1, f"Expected 1 refund, got {len(refunds)}"
+    # Check poster balance after dispute resolution
+    balance_after = direct_vm.get_balance(direct_bob)
 
-    refund_data = json.loads(refunds[0])
-    assert refund_data["amount"] == reward, \
-        f"Refund amount mismatch: {refund_data['amount']} != {reward}"
-    assert refund_data["to"] == _hex(direct_bob), \
-        f"Refund recipient mismatch: {refund_data['to']}"
+    # Poster should have received the refund
+    assert balance_after == balance_before + reward, \
+        f"Poster balance mismatch: {balance_after} != {balance_before} + {reward}"
 
 
-def test_payout_amount_matches_emitted_transfer_exactly(direct_vm, direct_deploy,
-                                                         direct_alice, direct_bob):
-    """The actual payout amount must equal the emitted transfer amount."""
+def test_payout_amount_matches_real_balance_change(direct_vm, direct_deploy,
+                                                     direct_alice, direct_bob):
+    """The actual payout must equal the reward amount."""
     contract = direct_deploy("contracts/agent_coordination.py")
 
     reward = 500000000000000000
@@ -240,22 +234,19 @@ def test_payout_amount_matches_emitted_transfer_exactly(direct_vm, direct_deploy
     direct_vm.sender = direct_alice
     contract.claimTask(task_id)
     contract.submitDelivery(task_id, "https://example.com/ai-blog")
+
+    balance_before = direct_vm.get_balance(direct_alice)
     contract.approveDelivery(task_id)
+    balance_after = direct_vm.get_balance(direct_alice)
 
-    # Verify emitted transfer exists and matches reward
-    transfers = json.loads(contract.getEmittedTransfers())
-    payouts = [v for v in transfers.values() if json.loads(v)["type"] == "payout"]
-    assert len(payouts) == 1
-    emitted_amount = json.loads(payouts[0])["amount"]
-
-    # The emitted amount must equal the reward
-    assert emitted_amount == reward, \
-        f"Emitted payout {emitted_amount} != reward {reward}"
+    # The balance change must equal the reward
+    assert balance_after - balance_before == reward, \
+        f"Balance change {balance_after - balance_before} != reward {reward}"
 
 
-def test_refund_amount_matches_emitted_transfer_exactly(direct_vm, direct_deploy,
-                                                        direct_alice, direct_bob):
-    """The actual refund amount must equal the emitted transfer amount."""
+def test_refund_amount_matches_real_balance_change(direct_vm, direct_deploy,
+                                                    direct_alice, direct_bob):
+    """The actual refund must equal the reward amount."""
     contract = direct_deploy("contracts/agent_coordination.py")
 
     reward = 500000000000000000
@@ -273,14 +264,12 @@ def test_refund_amount_matches_emitted_transfer_exactly(direct_vm, direct_deploy
     contract.submitDelivery(task_id, "https://example.com/off-topic")
 
     direct_vm.sender = direct_bob
+    contract.rejectDelivery(task_id)
+
+    balance_before = direct_vm.get_balance(direct_bob)
     contract.resolveDispute(task_id)
+    balance_after = direct_vm.get_balance(direct_bob)
 
-    # Verify emitted transfer exists and matches reward
-    transfers = json.loads(contract.getEmittedTransfers())
-    refunds = [v for v in transfers.values() if json.loads(v)["type"] == "refund"]
-    assert len(refunds) == 1
-    emitted_amount = json.loads(refunds[0])["amount"]
-
-    # The emitted amount must equal the reward
-    assert emitted_amount == reward, \
-        f"Emitted refund {emitted_amount} != reward {reward}"
+    # The balance change must equal the reward
+    assert balance_after - balance_before == reward, \
+        f"Balance change {balance_after - balance_before} != reward {reward}"
