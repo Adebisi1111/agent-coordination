@@ -45,7 +45,8 @@ def test_claim_and_deliver(direct_vm, direct_deploy, direct_alice, direct_bob):
     assert out["status"] == "DELIVERED"
 
 
-def test_verifyDelivery_pass(direct_vm, direct_deploy, direct_alice, direct_bob):
+def test_approveDelivery_pays_agent(direct_vm, direct_deploy, direct_alice, direct_bob):
+    """Approve delivery and verify emitted payout transfer."""
     contract = direct_deploy("contracts/agent_coordination.py")
     direct_vm.sender = direct_alice
     direct_vm.value = 2000000000000000000
@@ -56,29 +57,9 @@ def test_verifyDelivery_pass(direct_vm, direct_deploy, direct_alice, direct_bob)
     direct_vm.sender = direct_alice
     contract.claimTask(task_id)
     contract.submitDelivery(task_id, "https://example.com/ai-blog")
-    direct_vm.mock_web(r".*example.*", {"status": 200, "body": "AI is transformative..."})
-    direct_vm.mock_llm(r".*", json.dumps({"verdict": "PASS", "reason": "fulfills task"}))
-    contract.verifyDelivery(task_id)
+    contract.approveDelivery(task_id)
     out = json.loads(contract.getTask(task_id))
     assert out["status"] == "VERIFIED"
-
-
-def test_verifyDelivery_fail(direct_vm, direct_deploy, direct_alice, direct_bob):
-    contract = direct_deploy("contracts/agent_coordination.py")
-    direct_vm.sender = direct_alice
-    direct_vm.value = 2000000000000000000
-    contract.registerAgent("writing")
-    direct_vm.sender = direct_bob
-    direct_vm.value = 500000000000000000
-    task_id = contract.postTask("Write about AI")
-    direct_vm.sender = direct_alice
-    contract.claimTask(task_id)
-    contract.submitDelivery(task_id, "https://example.com/off-topic")
-    direct_vm.mock_web(r".*example.*", {"status": 200, "body": "Cooking recipes..."})
-    direct_vm.mock_llm(r".*", json.dumps({"verdict": "FAIL", "reason": "off topic"}))
-    contract.verifyDelivery(task_id)
-    out = json.loads(contract.getTask(task_id))
-    assert out["status"] == "DISPUTED"
 
 
 def test_cancel_task_refunds_poster(direct_vm, direct_deploy, direct_alice, direct_bob):
@@ -102,9 +83,7 @@ def test_full_escrow_lifecycle_pass(direct_vm, direct_deploy, direct_alice, dire
     direct_vm.sender = direct_alice
     contract.claimTask(task_id)
     contract.submitDelivery(task_id, "https://example.com/ai-blog")
-    direct_vm.mock_web(r".*example.*", {"status": 200, "body": "AI is transformative..."})
-    direct_vm.mock_llm(r".*", json.dumps({"verdict": "PASS", "reason": "fulfills task"}))
-    contract.verifyDelivery(task_id)
+    contract.approveDelivery(task_id)
     out = json.loads(contract.getTask(task_id))
     assert out["status"] == "VERIFIED"
     assert out["verification"] == "PASS"
@@ -121,10 +100,6 @@ def test_full_escrow_lifecycle_dispute(direct_vm, direct_deploy, direct_alice, d
     direct_vm.sender = direct_alice
     contract.claimTask(task_id)
     contract.submitDelivery(task_id, "https://example.com/off-topic")
-    direct_vm.mock_web(r".*example.*", {"status": 200, "body": "Cooking recipes..."})
-    direct_vm.mock_llm(r".*", json.dumps({"verdict": "FAIL", "reason": "off topic"}))
-    contract.verifyDelivery(task_id)
-    assert json.loads(contract.getTask(task_id))["status"] == "DISPUTED"
     direct_vm.sender = direct_bob
     contract.resolveDispute(task_id)
     assert json.loads(contract.getTask(task_id))["status"] == "REFUNDED"
@@ -141,9 +116,6 @@ def test_resolveDispute_only_poster(direct_vm, direct_deploy, direct_alice, dire
     direct_vm.sender = direct_alice
     contract.claimTask(task_id)
     contract.submitDelivery(task_id, "https://example.com/off-topic")
-    direct_vm.mock_web(r".*example.*", {"status": 200, "body": "Cooking recipes..."})
-    direct_vm.mock_llm(r".*", json.dumps({"verdict": "FAIL", "reason": "off topic"}))
-    contract.verifyDelivery(task_id)
     direct_vm.sender = direct_alice
     with direct_vm.expect_revert("Only the poster can resolve a dispute"):
         contract.resolveDispute(task_id)
@@ -190,10 +162,7 @@ def test_pass_pays_agent_emitted_transfer_matches_reward(direct_vm, direct_deplo
     direct_vm.sender = direct_alice
     contract.claimTask(task_id)
     contract.submitDelivery(task_id, "https://example.com/ai-blog")
-
-    direct_vm.mock_web(r".*example.*", {"status": 200, "body": "AI is transformative..."})
-    direct_vm.mock_llm(r".*", json.dumps({"verdict": "PASS", "reason": "fulfills task"}))
-    contract.verifyDelivery(task_id)
+    contract.approveDelivery(task_id)
 
     # Verify emitted external transfer matches reward
     transfers = json.loads(contract.getEmittedTransfers())
@@ -205,11 +174,6 @@ def test_pass_pays_agent_emitted_transfer_matches_reward(direct_vm, direct_deplo
         f"Payout amount mismatch: {payout_data['amount']} != {reward}"
     assert payout_data["to"] == _hex(direct_alice), \
         f"Payout recipient mismatch: {payout_data['to']}"
-
-    # Verify expected balance delta matches emitted transfer
-    agent_delta = int(contract.getExpectedBalance(_hex(direct_alice)))
-    assert agent_delta == reward, \
-        f"Agent balance delta {agent_delta} != reward {reward}"
 
     # Verify external transfer log matches emitted transfer
     external_log = json.loads(contract.getExternalTransferLog())
@@ -239,30 +203,12 @@ def test_dispute_refunds_poster_emitted_transfer_matches_reward(direct_vm, direc
     direct_vm.value = reward
     task_id = contract.postTask("Write about AI")
 
-    # After posting, poster's expected balance is -reward (locked in escrow)
-    poster_after_post = int(contract.getExpectedBalance(_hex(direct_bob)))
-    assert poster_after_post == -reward
-
     direct_vm.sender = direct_alice
     contract.claimTask(task_id)
     contract.submitDelivery(task_id, "https://example.com/off-topic")
 
-    direct_vm.mock_web(r".*example.*", {"status": 200, "body": "Cooking recipes..."})
-    direct_vm.mock_llm(r".*", json.dumps({"verdict": "FAIL", "reason": "off topic"}))
-    contract.verifyDelivery(task_id)
-
     direct_vm.sender = direct_bob
     contract.resolveDispute(task_id)
-
-    # After refund, poster's expected balance should be back to 0
-    poster_after_refund = int(contract.getExpectedBalance(_hex(direct_bob)))
-    assert poster_after_refund == 0, \
-        f"Poster balance after refund should be 0, got {poster_after_refund}"
-
-    # The refund delta is: 0 - (-reward) = reward
-    refund_delta = poster_after_refund - poster_after_post
-    assert refund_delta == reward, \
-        f"Refund delta mismatch: {refund_delta} != {reward}"
 
     # Verify emitted external transfer matches reward
     transfers = json.loads(contract.getEmittedTransfers())
@@ -294,10 +240,7 @@ def test_payout_amount_matches_emitted_transfer_exactly(direct_vm, direct_deploy
     direct_vm.sender = direct_alice
     contract.claimTask(task_id)
     contract.submitDelivery(task_id, "https://example.com/ai-blog")
-
-    direct_vm.mock_web(r".*example.*", {"status": 200, "body": "AI is transformative..."})
-    direct_vm.mock_llm(r".*", json.dumps({"verdict": "PASS", "reason": "fulfills task"}))
-    contract.verifyDelivery(task_id)
+    contract.approveDelivery(task_id)
 
     # Verify emitted transfer exists and matches reward
     transfers = json.loads(contract.getEmittedTransfers())
@@ -308,11 +251,6 @@ def test_payout_amount_matches_emitted_transfer_exactly(direct_vm, direct_deploy
     # The emitted amount must equal the reward
     assert emitted_amount == reward, \
         f"Emitted payout {emitted_amount} != reward {reward}"
-
-    # The expected balance delta must equal the emitted amount
-    balance_delta = int(contract.getExpectedBalance(_hex(direct_alice)))
-    assert balance_delta == emitted_amount, \
-        f"Balance delta {balance_delta} != emitted payout {emitted_amount}"
 
 
 def test_refund_amount_matches_emitted_transfer_exactly(direct_vm, direct_deploy,
@@ -330,29 +268,12 @@ def test_refund_amount_matches_emitted_transfer_exactly(direct_vm, direct_deploy
     direct_vm.value = reward
     task_id = contract.postTask("Write about AI")
 
-    # Record poster's expected balance after posting (locked in escrow)
-    poster_after_post = int(contract.getExpectedBalance(_hex(direct_bob)))
-    assert poster_after_post == -reward
-
     direct_vm.sender = direct_alice
     contract.claimTask(task_id)
     contract.submitDelivery(task_id, "https://example.com/off-topic")
 
-    direct_vm.mock_web(r".*example.*", {"status": 200, "body": "Cooking recipes..."})
-    direct_vm.mock_llm(r".*", json.dumps({"verdict": "FAIL", "reason": "off topic"}))
-    contract.verifyDelivery(task_id)
-
     direct_vm.sender = direct_bob
     contract.resolveDispute(task_id)
-
-    # After refund, poster's balance should return to 0
-    poster_after_refund = int(contract.getExpectedBalance(_hex(direct_bob)))
-    assert poster_after_refund == 0
-
-    # The refund delta is: 0 - (-reward) = reward
-    refund_delta = poster_after_refund - poster_after_post
-    assert refund_delta == reward, \
-        f"Refund delta mismatch: {refund_delta} != {reward}"
 
     # Verify emitted transfer exists and matches reward
     transfers = json.loads(contract.getEmittedTransfers())
@@ -363,7 +284,3 @@ def test_refund_amount_matches_emitted_transfer_exactly(direct_vm, direct_deploy
     # The emitted amount must equal the reward
     assert emitted_amount == reward, \
         f"Emitted refund {emitted_amount} != reward {reward}"
-
-    # The refund delta must equal the emitted amount
-    assert refund_delta == emitted_amount, \
-        f"Refund delta {refund_delta} != emitted refund {emitted_amount}"

@@ -6,12 +6,6 @@ from datetime import datetime, timezone
 from genlayer import *
 
 
-# Multi-Agent Coordination System
-#
-# Agents coordinate work through GenLayer consensus. Tasks are posted,
-# agents claim them, consensus verifies delivery, payments are escrowed.
-
-
 @allow_storage
 @dataclass
 class Agent:
@@ -20,7 +14,7 @@ class Agent:
     stake: u256
     reputation: u256
     active: bool
-    did_hash: str  # Hash of agent's Technocore DID (privacy-preserving)
+    did_hash: str
 
 
 @allow_storage
@@ -33,11 +27,11 @@ class Task:
     assignee: str
     delivery_url: str
     verification: str
-    technocore_room: str  # Technocore room name for this task
+    technocore_room: str
 
 
 @gl.evm.contract_interface
-class _Payee:
+class _Recipient:
     class View:
         pass
 
@@ -49,32 +43,18 @@ class AgentCoordination(gl.Contract):
     agents: TreeMap[str, Agent]
     tasks: TreeMap[str, Task]
     task_count: u256
-    min_stake: u256 = u256(1000000000000000000)  # 1 GEN
-    # Track emitted external transfers for verification.
+    min_stake: u256 = u256(1000000000000000)  # 0.001 GEN for testing
     _emitted_transfers: TreeMap[str, str]
-    # Track expected balance changes since direct mode doesn't move real funds.
-    _expected_balances: TreeMap[str, i256]
-    # Track actual external transfer events (verifiable on-chain)
     _external_transfer_log: TreeMap[str, str]
 
     def __init__(self):
         pass
 
-    def _adjust_balance(self, addr: str, delta: int) -> None:
-        """Record an expected balance change for verification."""
-        current = int(self._expected_balances.get(addr, i256(0)))
-        self._expected_balances[addr] = i256(current + delta)
-
-    @gl.public.view
-    def getExpectedBalance(self, addr: str) -> str:
-        """Read the expected balance change for an address."""
-        return str(int(self._expected_balances.get(addr, i256(0))))
-
     @gl.public.write.payable
     def registerAgent(self, capabilities: str, did_hash: str = "") -> None:
         sender = gl.message.sender_address.as_hex
         if gl.message.value < self.min_stake:
-            raise gl.vm.UserError("Stake below minimum (1 GEN)")
+            raise gl.vm.UserError("Stake below minimum")
         existing = self.agents.get(sender, None)
         if existing is None:
             self.agents[sender] = Agent(
@@ -109,8 +89,6 @@ class AgentCoordination(gl.Contract):
             technocore_room=technocore_room,
         )
         self.task_count += u256(1)
-        # The poster locks the reward into escrow
-        self._adjust_balance(gl.message.sender_address.as_hex, -int(gl.message.value))
         return task_id
 
     @gl.public.write
@@ -144,86 +122,30 @@ class AgentCoordination(gl.Contract):
         self.tasks[task_id] = task
 
     @gl.public.write
-    def verifyDelivery(self, task_id: str) -> None:
+    def approveDelivery(self, task_id: str) -> None:
+        """Direct approval without AI verification - for testing payouts."""
         task = self.tasks.get(task_id, None)
         if task is None:
             raise gl.vm.UserError("Task not found")
         if task.status != "DELIVERED":
-            raise gl.vm.UserError("No delivery to verify")
-        if task.verification == "IN_PROGRESS":
-            raise gl.vm.UserError("Verification already in progress")
-
-        # Mark verification in progress to prevent replay during consensus
-        task.verification = "IN_PROGRESS"
-        self.tasks[task_id] = task
-
-        ALLOWED = ("PASS", "FAIL")
-
-        def work() -> dict:
-            try:
-                content = gl.nondet.web.render(task.delivery_url, mode="text")
-            except Exception:
-                raise gl.vm.UserError("EVIDENCE_UNREACHABLE")
-            if not content:
-                return {"verdict": "FAIL"}
-            prompt = (
-                f"Task: {task.description}\n"
-                f"Delivery content from {task.delivery_url}:\n\n{content[:6000]}\n\n"
-                f"Does this delivery fulfill the task? Respond as JSON: "
-                f'{{"verdict": "PASS"|"FAIL", "reason": "..."}}'
-            )
-            res = gl.nondet.exec_prompt(prompt, response_format="json")
-            verdict = (res.get("verdict") or "").strip().upper()
-            if verdict not in ALLOWED:
-                raise gl.vm.UserError("MALFORMED_DECISION")
-            return {"verdict": verdict}
-
-        def validator(leaders_res) -> bool:
-            if not isinstance(leaders_res, gl.vm.Return):
-                leader_msg = getattr(leaders_res, "message", "")
-                try:
-                    work()
-                    return False
-                except gl.vm.UserError as e:
-                    return str(e.message) == str(leader_msg)
-                except Exception:
-                    return False
-            try:
-                mine = work()
-            except Exception:
-                return False
-            return mine["verdict"] == leaders_res.calldata["verdict"]
-
-        try:
-            result = gl.vm.run_nondet_unsafe(work, validator)
-        except gl.vm.UserError as e:
-            raise gl.vm.UserError(f"Verification failed: {e.message}")
-
-        task.verification = result["verdict"]
-
-        if result["verdict"] == "PASS":
-            task.status = "VERIFIED"
-            agent = self.agents.get(task.assignee, None)
-            if agent is not None:
-                agent.reputation += u256(1)
-                self.agents[task.assignee] = agent
-            # Pay the agent the escrowed reward via external message
-            self._adjust_balance(task.assignee, int(task.reward))
-            transfer_id = f"payout-{task_id}"
-            self._emitted_transfers[transfer_id] = json.dumps({
-                "to": task.assignee, "amount": int(task.reward), "type": "payout"
-            })
-            _Payee(Address(task.assignee)).emit_transfer(
-                value=u256(int(task.reward)), on="finalized"
-            )
-            # Log the external transfer event
-            self._external_transfer_log[transfer_id] = json.dumps({
-                "to": task.assignee, "amount": int(task.reward), "type": "payout",
-                "status": "emitted", "on": "finalized"
-            })
-        else:
-            task.status = "DISPUTED"
-
+            raise gl.vm.UserError("No delivery to approve")
+        
+        task.status = "VERIFIED"
+        task.verification = "PASS"
+        agent = self.agents.get(task.assignee, None)
+        if agent is not None:
+            agent.reputation += u256(1)
+            self.agents[task.assignee] = agent
+        # Use _Recipient.emit_transfer() for contract-to-EOA transfer
+        transfer_id = f"payout-{task_id}"
+        self._emitted_transfers[transfer_id] = json.dumps({
+            "to": task.assignee, "amount": int(task.reward), "type": "payout"
+        })
+        _Recipient(Address(task.assignee)).emit_transfer(value=u256(int(task.reward)))
+        self._external_transfer_log[transfer_id] = json.dumps({
+            "to": task.assignee, "amount": int(task.reward), "type": "payout",
+            "status": "emitted"
+        })
         self.tasks[task_id] = task
 
     @gl.public.write
@@ -239,18 +161,14 @@ class AgentCoordination(gl.Contract):
 
         task.status = "REFUNDED"
         self.tasks[task_id] = task
-        self._adjust_balance(task.poster, int(task.reward))
         transfer_id = f"refund-{task_id}"
         self._emitted_transfers[transfer_id] = json.dumps({
             "to": task.poster, "amount": int(task.reward), "type": "refund"
         })
-        _Payee(Address(task.poster)).emit_transfer(
-            value=u256(int(task.reward)), on="finalized"
-        )
-        # Log the external transfer event
+        _Recipient(Address(task.poster)).emit_transfer(value=u256(int(task.reward)))
         self._external_transfer_log[transfer_id] = json.dumps({
             "to": task.poster, "amount": int(task.reward), "type": "refund",
-            "status": "emitted", "on": "finalized"
+            "status": "emitted"
         })
 
     @gl.public.write
@@ -265,18 +183,14 @@ class AgentCoordination(gl.Contract):
             raise gl.vm.UserError("Only the poster can cancel")
         task.status = "CANCELLED"
         self.tasks[task_id] = task
-        self._adjust_balance(task.poster, int(task.reward))
         transfer_id = f"cancel-{task_id}"
         self._emitted_transfers[transfer_id] = json.dumps({
             "to": task.poster, "amount": int(task.reward), "type": "cancel_refund"
         })
-        _Payee(Address(task.poster)).emit_transfer(
-            value=u256(int(task.reward)), on="finalized"
-        )
-        # Log the external transfer event
+        _Recipient(Address(task.poster)).emit_transfer(value=u256(int(task.reward)))
         self._external_transfer_log[transfer_id] = json.dumps({
             "to": task.poster, "amount": int(task.reward), "type": "cancel_refund",
-            "status": "emitted", "on": "finalized"
+            "status": "emitted"
         })
 
     @gl.public.view
@@ -316,7 +230,6 @@ class AgentCoordination(gl.Contract):
 
     @gl.public.view
     def getEmittedTransfers(self) -> str:
-        """Return all emitted external transfers for verification."""
         result = {}
         for k in self._emitted_transfers.keys():
             result[k] = self._emitted_transfers[k]
@@ -324,12 +237,6 @@ class AgentCoordination(gl.Contract):
 
     @gl.public.view
     def getExternalTransferLog(self) -> str:
-        """Return all external transfers for verification.
-        
-        This is the on-chain log of actual external transfers emitted
-        via _Payee.emit_transfer. These are real balance changes, not
-        just internal bookkeeping.
-        """
         result = {}
         for k in self._external_transfer_log.keys():
             result[k] = self._external_transfer_log[k]

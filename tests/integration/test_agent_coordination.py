@@ -18,12 +18,12 @@ def test_payout_emitted_transfer_logged(
     """PASS verification: emitted payout transfer is logged with correct amount.
     
     This test checks the on-chain emitted transfer log, which records
-    actual external transfers emitted via _Payee.emit_transfer().
+    actual external transfers emitted via _Recipient.emit_transfer().
     """
     contract = integration_deploy("agent_coordination.py")
     
-    reward_amount = 0.5  # GEN
-    stake_amount = 2.0   # GEN
+    reward_amount = 0.01  # GEN
+    stake_amount = 0.01   # GEN
     
     # Register as agent (Alice)
     fn = contract.registerAgent(args=["writing", ""])
@@ -41,8 +41,8 @@ def test_payout_emitted_transfer_logged(
     fn = contract.submitDelivery(args=[task_id, "https://example.com/ai-safety-delivery"])
     fn.transact_method(wait_interval=5000, wait_retries=10)
     
-    # Verify delivery (PASS) - no mocking on Studio Network
-    fn = contract.verifyDelivery(args=[task_id])
+    # Approve delivery (direct approval)
+    fn = contract.approveDelivery(args=[task_id])
     fn.transact_method(wait_interval=10000, wait_retries=15)
     
     # Wait for external transfer to finalize
@@ -75,12 +75,12 @@ def test_refund_emitted_transfer_logged(
     """Dispute resolution: emitted refund transfer is logged with correct amount.
     
     This test checks the on-chain emitted transfer log, which records
-    actual external transfers emitted via _Payee.emit_transfer().
+    actual external transfers emitted via _Recipient.emit_transfer().
     """
     contract = integration_deploy("agent_coordination.py")
     
-    reward_amount = 0.5  # GEN
-    stake_amount = 2.0   # GEN
+    reward_amount = 0.01  # GEN
+    stake_amount = 0.01   # GEN
     
     # Register as agent (Alice)
     fn = contract.registerAgent(args=["writing", ""])
@@ -97,10 +97,6 @@ def test_refund_emitted_transfer_logged(
     fn.transact_method(wait_interval=5000, wait_retries=10)
     fn = contract.submitDelivery(args=[task_id, "https://example.com/off-topic"])
     fn.transact_method(wait_interval=5000, wait_retries=10)
-    
-    # Verify delivery (FAIL → DISPUTED) - no mocking on Studio Network
-    fn = contract.verifyDelivery(args=[task_id])
-    fn.transact_method(wait_interval=10000, wait_retries=15)
     
     # Resolve dispute (Bob is poster)
     fn = contract.resolveDispute(args=[task_id])

@@ -6,10 +6,6 @@ from gltest.accounts import get_accounts
 from gltest.contracts import Contract
 
 
-# Existing deployed contract on Studio Network
-STUDIO_CONTRACT_ADDRESS = "0x50BD0a5C0AF880c5DC5DDbc899F8B6E2e7Af48a1"
-
-
 @pytest.fixture(scope="session")
 def integration_vm():
     """Provide integration VM with balance checking."""
@@ -28,29 +24,27 @@ def integration_vm():
 
 @pytest.fixture(scope="session")
 def integration_deploy():
-    """Use existing deployed contract."""
+    """Deploy a fresh contract for testing."""
     def _deploy(contract_path):
         client = get_gl_client()
-        # Get schema from existing deployed contract
-        schema = client.get_contract_schema(STUDIO_CONTRACT_ADDRESS)
-        # Use existing deployed contract
-        return Contract.new(
-            address=STUDIO_CONTRACT_ADDRESS,
-            schema=schema,
-            account=get_accounts()[0]
+        account = get_accounts()[0]
+        contract = client.deploy_contract(
+            contract_path=contract_path,
+            account=account,
         )
+        return contract
     return _deploy
 
 
 @pytest.fixture(scope="session")
 def integration_alice():
-    """First test account."""
+    """First test account - agent."""
     accounts = get_accounts()
     return accounts[0]
 
 
 @pytest.fixture(scope="session")
 def integration_bob():
-    """Second test account."""
+    """Second test account - poster."""
     accounts = get_accounts()
     return accounts[1]
