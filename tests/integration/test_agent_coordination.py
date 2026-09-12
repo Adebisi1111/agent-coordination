@@ -15,7 +15,10 @@ import time
 def test_payout_real_balance_change(
     integration_vm, integration_deploy, integration_alice, integration_bob
 ):
-    """PASS verification: agent's balance increases by reward amount."""
+    """PASS verification: agent's balance increases by reward amount.
+    
+    In this test, Alice is the agent and Bob posts the task.
+    """
     contract = integration_deploy("agent_coordination.py")
     
     reward_amount = 0.01  # GEN
@@ -59,7 +62,11 @@ def test_payout_real_balance_change(
 def test_refund_real_balance_change(
     integration_vm, integration_deploy, integration_alice, integration_bob
 ):
-    """Dispute resolution: poster's balance increases by refund amount."""
+    """Dispute resolution: poster's balance increases by refund amount.
+    
+    In this test, Alice is the poster AND the agent (all writes signed by Alice).
+    The refund should go to Alice (the poster).
+    """
     contract = integration_deploy("agent_coordination.py")
     
     reward_amount = 0.01  # GEN
@@ -69,7 +76,7 @@ def test_refund_real_balance_change(
     fn = contract.registerAgent(args=["writing", ""])
     fn.transact_method(value=int(stake_amount * 10**18), wait_interval=5000, wait_retries=10)
     
-    # Post task with reward (Bob is poster)
+    # Post task with reward (Alice is poster)
     fn = contract.postTask(args=["Write about AI", ""])
     post_result = fn.transact_method(value=int(reward_amount * 10**18), wait_interval=5000, wait_retries=10)
     
@@ -81,14 +88,14 @@ def test_refund_real_balance_change(
     fn = contract.submitDelivery(args=[task_id, "https://example.com/off-topic"])
     fn.transact_method(wait_interval=5000, wait_retries=10)
     
-    # Reject delivery (Bob is poster)
+    # Reject delivery (Alice is poster)
     fn = contract.rejectDelivery(args=[task_id])
     fn.transact_method(wait_interval=5000, wait_retries=10)
     
     # Check poster balance before dispute resolution
-    balance_before = integration_vm.get_balance(integration_bob)
+    balance_before = integration_vm.get_balance(integration_alice)
     
-    # Resolve dispute (Bob is poster)
+    # Resolve dispute (Alice is poster)
     fn = contract.resolveDispute(args=[task_id])
     fn.transact_method(wait_interval=5000, wait_retries=10)
     
@@ -96,7 +103,7 @@ def test_refund_real_balance_change(
     time.sleep(60)
     
     # Check poster balance after dispute resolution
-    balance_after = integration_vm.get_balance(integration_bob)
+    balance_after = integration_vm.get_balance(integration_alice)
     
     # Poster should have received the refund
     assert balance_after == balance_before + int(reward_amount * 10**18), \

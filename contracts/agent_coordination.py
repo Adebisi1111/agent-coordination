@@ -140,12 +140,15 @@ class AgentCoordination(gl.Contract):
 
     @gl.public.write
     def rejectDelivery(self, task_id: str) -> None:
-        """Reject delivery and mark as disputed."""
+        """Reject delivery and mark as disputed. Only poster can reject."""
         task = self.tasks.get(task_id, None)
         if task is None:
             raise gl.vm.UserError("Task not found")
         if task.status != "DELIVERED":
             raise gl.vm.UserError("No delivery to reject")
+        sender = gl.message.sender_address.as_hex
+        if sender != task.poster:
+            raise gl.vm.UserError("Only the poster can reject delivery")
         task.status = "DISPUTED"
         task.verification = "FAIL"
         self.tasks[task_id] = task
