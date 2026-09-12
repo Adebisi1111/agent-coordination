@@ -185,33 +185,40 @@ def test_dispute_refunds_poster_real_balance(direct_vm, direct_deploy,
                                               direct_alice, direct_bob):
     """Dispute: poster's balance increases by refund amount."""
     contract = direct_deploy("contracts/agent_coordination.py")
-
     reward = 500000000000000000
 
+    # 1. Alice registers as an agent
     direct_vm.sender = direct_alice
     direct_vm.value = 2000000000000000000
     contract.registerAgent("writing")
 
+    # 2. Bob posts the task (Status: OPEN)
     direct_vm.sender = direct_bob
     direct_vm.value = reward
     task_id = contract.postTask("Write about AI")
 
+    # 3. Alice claims the task (Status: ASSIGNED)
     direct_vm.sender = direct_alice
     contract.claimTask(task_id)
-    contract.submitDelivery(task_id, "https://example.com/off-topic")
+    
+    # 4. Alice submits delivery (Status: DELIVERED)
+    contract.submitDelivery(task_id, "https://example.com")
 
+    # 5. Bob (Poster) rejects delivery (Transitions Status to DISPUTED)
     direct_vm.sender = direct_bob
     contract.rejectDelivery(task_id)
 
     # Check poster balance before dispute resolution
     balance_before = direct_vm.get_balance(direct_bob)
 
+    # 6. Bob (Poster) resolves dispute (Transitions Status to REFUNDED)
+    direct_vm.sender = direct_bob
     contract.resolveDispute(task_id)
 
     # Check poster balance after dispute resolution
     balance_after = direct_vm.get_balance(direct_bob)
 
-    # Poster should have received the refund
+    # Assert balance verification
     assert balance_after == balance_before + reward, \
         f"Poster balance mismatch: {balance_after} != {balance_before} + {reward}"
 

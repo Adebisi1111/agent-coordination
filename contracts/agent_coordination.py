@@ -134,7 +134,6 @@ class AgentCoordination(gl.Contract):
         if agent is not None:
             agent.reputation += u256(1)
             self.agents[task.assignee] = agent
-        # Use _Recipient.emit_transfer() for contract-to-EOA transfer
         _Recipient(Address(task.assignee)).emit_transfer(value=u256(int(task.reward)))
         self.tasks[task_id] = task
 
@@ -144,8 +143,10 @@ class AgentCoordination(gl.Contract):
         task = self.tasks.get(task_id, None)
         if task is None:
             raise gl.vm.UserError("Task not found")
+        # Must be in DELIVERED state
         if task.status != "DELIVERED":
             raise gl.vm.UserError("No delivery to reject")
+        # Only poster can reject
         sender = gl.message.sender_address.as_hex
         if sender != task.poster:
             raise gl.vm.UserError("Only the poster can reject delivery")
@@ -159,19 +160,22 @@ class AgentCoordination(gl.Contract):
         task = self.tasks.get(task_id, None)
         if task is None:
             raise gl.vm.UserError("Task not found")
+        # Must be in DISPUTED state
         if task.status != "DISPUTED":
             raise gl.vm.UserError("Task is not disputed")
+        # Only poster can resolve
         sender = gl.message.sender_address.as_hex
         if sender != task.poster:
             raise gl.vm.UserError("Only the poster can resolve a dispute")
 
         task.status = "REFUNDED"
         self.tasks[task_id] = task
-        # Use _Recipient.emit_transfer() for contract-to-EOA transfer
+        # External transfer to poster
         _Recipient(Address(task.poster)).emit_transfer(value=u256(int(task.reward)))
 
     @gl.public.write
     def cancelTask(self, task_id: str) -> None:
+        """Cancel task and refund poster."""
         task = self.tasks.get(task_id, None)
         if task is None:
             raise gl.vm.UserError("Task not found")
@@ -182,7 +186,6 @@ class AgentCoordination(gl.Contract):
             raise gl.vm.UserError("Only the poster can cancel")
         task.status = "CANCELLED"
         self.tasks[task_id] = task
-        # Use _Recipient.emit_transfer() for contract-to-EOA transfer
         _Recipient(Address(task.poster)).emit_transfer(value=u256(int(task.reward)))
 
     @gl.public.view
