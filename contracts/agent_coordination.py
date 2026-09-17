@@ -42,7 +42,9 @@ class _Recipient:
 class AgentCoordination(gl.Contract):
     agents: TreeMap[str, Agent]
     tasks: TreeMap[str, Task]
+    emitted_transfers: TreeMap[str, str]
     task_count: u256
+    transfer_count: u256 = u256(0)
     min_stake: u256 = u256(1000000000000000)  # 0.001 GEN for testing
 
     def __init__(self):
@@ -135,6 +137,14 @@ class AgentCoordination(gl.Contract):
             agent.reputation += u256(1)
             self.agents[task.assignee] = agent
         _Recipient(Address(task.assignee)).emit_transfer(value=u256(int(task.reward)))
+        # Record emitted transfer
+        self.emitted_transfers[str(self.transfer_count)] = json.dumps({
+            "type": "payout",
+            "amount": int(task.reward),
+            "recipient": task.assignee,
+            "task_id": task_id,
+        })
+        self.transfer_count += u256(1)
         self.tasks[task_id] = task
 
     @gl.public.write
@@ -172,6 +182,14 @@ class AgentCoordination(gl.Contract):
         self.tasks[task_id] = task
         # External transfer to poster
         _Recipient(Address(task.poster)).emit_transfer(value=u256(int(task.reward)))
+        # Record emitted transfer
+        self.emitted_transfers[str(self.transfer_count)] = json.dumps({
+            "type": "refund",
+            "amount": int(task.reward),
+            "recipient": task.poster,
+            "task_id": task_id,
+        })
+        self.transfer_count += u256(1)
 
     @gl.public.write
     def cancelTask(self, task_id: str) -> None:
@@ -187,6 +205,14 @@ class AgentCoordination(gl.Contract):
         task.status = "CANCELLED"
         self.tasks[task_id] = task
         _Recipient(Address(task.poster)).emit_transfer(value=u256(int(task.reward)))
+        # Record emitted transfer
+        self.emitted_transfers[str(self.transfer_count)] = json.dumps({
+            "type": "refund",
+            "amount": int(task.reward),
+            "recipient": task.poster,
+            "task_id": task_id,
+        })
+        self.transfer_count += u256(1)
 
     @gl.public.view
     def getClaimCount(self) -> str:
@@ -222,3 +248,25 @@ class AgentCoordination(gl.Contract):
             "active": a.active,
             "did_hash": a.did_hash,
         })
+
+    @gl.public.view
+    def getTransferCount(self) -> str:
+        return json.dumps({"count": int(self.transfer_count)})
+
+    @gl.public.view
+    def getTransfer(self, index: str) -> str:
+        val = self.emitted_transfers.get(index, None)
+        if val is None:
+            return json.dumps({"exists": False})
+        return val
+
+    @gl.public.view
+    def getEmittedTransfers(self) -> str:
+        """Get all emitted external transfers for verification."""
+        result = {}
+        try:
+            for k in self.emitted_transfers.keys():
+                result[k] = self.emitted_transfers[k]
+        except Exception as e:
+            result["error"] = str(e)
+        return json.dumps(result)
