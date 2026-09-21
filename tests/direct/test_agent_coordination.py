@@ -1,11 +1,5 @@
 import json
-
-
-def _hex(addr):
-    if isinstance(addr, (bytes, bytearray)):
-        from genlayer.py.types import Address
-        return Address(bytes(addr)).as_hex
-    return str(addr)
+import pytest
 
 
 def test_registerAgent(direct_vm, direct_deploy, direct_alice):
@@ -144,101 +138,87 @@ def test_get_claim_count(direct_vm, direct_deploy, direct_alice, direct_bob):
 
 
 # --------------------------------------------------------------------------
-# Emitted transfer verification (direct-mode safe).
-# These tests verify the contract correctly RECORDS external transfers.
-# For live balance verification, see tests/integration/test_agent_coordination.py.
+# Real balance verification tests
+# These tests use the integration_vm fixture to check actual account balances
+# before and after payout/refund operations.
 # --------------------------------------------------------------------------
 
 
-def test_payout_emits_external_transfer(direct_vm, direct_deploy, direct_alice, direct_bob):
-    """PASS path: approveDelivery emits external transfer to agent."""
-    contract = direct_deploy("contracts/agent_coordination.py")
+def test_payout_increases_agent_balance(integration_vm, deployed_contract, integration_alice, integration_bob):
+    """Real balance test: approveDelivery increases agent's balance."""
+    contract = deployed_contract
     reward = 500000000000000000
-
-    direct_vm.sender = direct_alice
-    direct_vm.value = 2000000000000000000
-    contract.registerAgent("writing")
-
-    direct_vm.sender = direct_bob
-    direct_vm.value = reward
-    task_id = contract.postTask("Write about AI")
-
-    direct_vm.sender = direct_alice
-    contract.claimTask(task_id)
-    contract.submitDelivery(task_id, "https://example.com/ai-blog")
-    contract.approveDelivery(task_id)
-
-    # Verify emitted transfer via contract view
-    transfers_raw = contract.getEmittedTransfers()
-    transfers = json.loads(transfers_raw) if isinstance(transfers_raw, str) else transfers_raw
-
-    # Should have at least one payout transfer
-    payout_found = False
-    for key, val in transfers.items():
-        t = json.loads(val) if isinstance(val, str) else val
-        if t.get("type") == "payout" and int(t.get("amount", 0)) == reward:
-            payout_found = True
-            break
-
-    assert payout_found, f"No payout transfer found with amount {reward}. Transfers: {transfers}"
+    
+    # Setup: alice registers as agent
+    contract.registerAgent("writing", caller=integration_alice, value=2000000000000000000)
+    
+    # Bob posts task with reward
+    contract.postTask("Write about AI", caller=integration_bob, value=reward)
+    task_id = "task-1"
+    
+    # Record alice's balance BEFORE approval
+    balance_before = integration_vm.get_balance(integration_alice)
+    
+    # Alice claims, delivers, and gets approved
+    contract.claimTask(task_id, caller=integration_alice)
+    contract.submitDelivery(task_id, "https://example.com/ai-blog", caller=integration_alice)
+    contract.approveDelivery(task_id, caller=integration_bob)
+    
+    # Record alice's balance AFTER approval
+    balance_after = integration_vm.get_balance(integration_alice)
+    
+    # VERIFY: Agent's balance increased by reward amount
+    assert balance_after >= balance_before + reward, \
+        f"Agent balance did not increase. Before: {balance_before}, After: {balance_after}, Expected increase: {reward}"
 
 
-def test_refund_emits_external_transfer(direct_vm, direct_deploy, direct_alice, direct_bob):
-    """Dispute path: resolveDispute emits external transfer to poster."""
-    contract = direct_deploy("contracts/agent_coordination.py")
+def test_refund_increases_poster_balance(integration_vm, deployed_contract, integration_alice, integration_bob):
+    """Real balance test: resolveDispute increases poster's balance."""
+    contract = deployed_contract
     reward = 500000000000000000
-
-    direct_vm.sender = direct_alice
-    direct_vm.value = 2000000000000000000
-    contract.registerAgent("writing")
-
-    direct_vm.sender = direct_bob
-    direct_vm.value = reward
-    task_id = contract.postTask("Write about AI")
-
-    direct_vm.sender = direct_alice
-    contract.claimTask(task_id)
-    contract.submitDelivery(task_id, "https://example.com/off-topic")
-
-    direct_vm.sender = direct_bob
-    contract.rejectDelivery(task_id)
-    contract.resolveDispute(task_id)
-
-    # Verify emitted transfer via contract view
-    transfers_raw = contract.getEmittedTransfers()
-    transfers = json.loads(transfers_raw) if isinstance(transfers_raw, str) else transfers_raw
-
-    # Should have at least one refund transfer
-    refund_found = False
-    for key, val in transfers.items():
-        t = json.loads(val) if isinstance(val, str) else val
-        if t.get("type") == "refund" and int(t.get("amount", 0)) == reward:
-            refund_found = True
-            break
-
-    assert refund_found, f"No refund transfer found with amount {reward}. Transfers: {transfers}"
+    
+    # Setup: alice registers as agent
+    contract.registerAgent("writing", caller=integration_alice, value=2000000000000000000)
+    
+    # Bob posts task
+    contract.postTask("Write about AI", caller=integration_bob, value=reward)
+    task_id = "task-1"
+    
+    # Record bob's balance BEFORE dispute resolution
+    balance_before = integration_vm.get_balance(integration_bob)
+    
+    # Alice claims, delivers (bad delivery), bob rejects, resolves dispute
+    contract.claimTask(task_id, caller=integration_alice)
+    contract.submitDelivery(task_id, "https://example.com/off-topic", caller=integration_alice)
+    contract.rejectDelivery(task_id, caller=integration_bob)
+    contract.resolveDispute(task_id, caller=integration_bob)
+    
+    # Record bob's balance AFTER dispute resolution
+    balance_after = integration_vm.get_balance(integration_bob)
+    
+    # VERIFY: Poster's balance increased by refund amount
+    assert balance_after >= balance_before + reward, \
+        f"Poster balance did not increase. Before: {balance_before}, After: {balance_after}, Expected increase: {reward}"
 
 
-def test_cancel_emits_external_transfer(direct_vm, direct_deploy, direct_bob):
-    """Cancel path: cancelTask emits external transfer to poster."""
-    contract = direct_deploy("contracts/agent_coordination.py")
+def test_cancel_refunds_poster_balance(integration_vm, deployed_contract, integration_alice, integration_bob):
+    """Real balance test: cancelTask increases poster's balance."""
+    contract = deployed_contract
     reward = 500000000000000000
-
-    direct_vm.sender = direct_bob
-    direct_vm.value = reward
-    task_id = contract.postTask("Write about AI")
-    contract.cancelTask(task_id)
-
-    # Verify emitted transfer via contract view
-    transfers_raw = contract.getEmittedTransfers()
-    transfers = json.loads(transfers_raw) if isinstance(transfers_raw, str) else transfers_raw
-
-    # Should have at least one refund transfer (cancel = refund)
-    refund_found = False
-    for key, val in transfers.items():
-        t = json.loads(val) if isinstance(val, str) else val
-        if t.get("type") == "refund" and int(t.get("amount", 0)) == reward:
-            refund_found = True
-            break
-
-    assert refund_found, f"No refund transfer found after cancel. Transfers: {transfers}"
+    
+    # Bob posts task
+    contract.postTask("Write about AI", caller=integration_bob, value=reward)
+    task_id = "task-1"
+    
+    # Record bob's balance BEFORE cancel
+    balance_before = integration_vm.get_balance(integration_bob)
+    
+    # Bob cancels task
+    contract.cancelTask(task_id, caller=integration_bob)
+    
+    # Record bob's balance AFTER cancel
+    balance_after = integration_vm.get_balance(integration_bob)
+    
+    # VERIFY: Poster's balance increased by refund amount
+    assert balance_after >= balance_before + reward, \
+        f"Poster balance did not increase after cancel. Before: {balance_before}, After: {balance_after}, Expected increase: {reward}"
