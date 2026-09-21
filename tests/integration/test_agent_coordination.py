@@ -1,3 +1,11 @@
+"""
+Integration tests — require GenLayer Studio running.
+
+These tests verify ACTUAL account-balance changes on Studio Network,
+not just contract-maintained bookkeeping.
+
+Run with: gltest tests/integration/ -v -s
+"""
 import pytest
 import json
 import time
