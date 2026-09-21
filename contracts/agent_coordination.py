@@ -3,7 +3,8 @@
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from genlayer import *
+import genlayer as gl
+from genlayer.storage import allow as allow_storage
 
 
 @allow_storage
@@ -11,8 +12,8 @@ from genlayer import *
 class Agent:
     owner: str
     capabilities: str
-    stake: u256
-    reputation: u256
+    stake: gl.u256
+    reputation: gl.u256
     active: bool
     did_hash: str
 
@@ -22,7 +23,7 @@ class Agent:
 class Task:
     poster: str
     description: str
-    reward: u256
+    reward: gl.u256
     status: str
     assignee: str
     delivery_url: str
@@ -30,22 +31,13 @@ class Task:
     technocore_room: str
 
 
-@gl.evm.contract_interface
-class _Recipient:
-    class View:
-        pass
-
-    class Write:
-        pass
-
-
 class AgentCoordination(gl.Contract):
-    agents: TreeMap[str, Agent]
-    tasks: TreeMap[str, Task]
-    emitted_transfers: TreeMap[str, str]
-    task_count: u256
-    transfer_count: u256 = u256(0)
-    min_stake: u256 = u256(1000000000000000)  # 0.001 GEN for testing
+    agents: gl.storage.TreeMap[str, Agent]
+    tasks: gl.storage.TreeMap[str, Task]
+    emitted_transfers: gl.storage.TreeMap[str, str]
+    task_count: gl.u256
+    transfer_count: gl.u256 = gl.u256(0)
+    min_stake: gl.u256 = gl.u256(1000000000000000)  # 0.001 GEN for testing
 
     def __init__(self):
         pass
@@ -61,7 +53,7 @@ class AgentCoordination(gl.Contract):
                 owner=sender,
                 capabilities=capabilities,
                 stake=gl.message.value,
-                reputation=u256(0),
+                reputation=gl.u256(0),
                 active=True,
                 did_hash=did_hash,
             )
@@ -75,9 +67,9 @@ class AgentCoordination(gl.Contract):
 
     @gl.public.write.payable
     def postTask(self, description: str, technocore_room: str = "") -> str:
-        if gl.message.value <= u256(0):
+        if gl.message.value <= gl.u256(0):
             raise gl.vm.UserError("Reward must be > 0")
-        task_id = f"task-{self.task_count + u256(1)}"
+        task_id = f"task-{self.task_count + gl.u256(1)}"
         self.tasks[task_id] = Task(
             poster=gl.message.sender_address.as_hex,
             description=description,
@@ -88,7 +80,7 @@ class AgentCoordination(gl.Contract):
             verification="PENDING",
             technocore_room=technocore_room,
         )
-        self.task_count += u256(1)
+        self.task_count += gl.u256(1)
         return task_id
 
     @gl.public.write
@@ -134,9 +126,12 @@ class AgentCoordination(gl.Contract):
         task.verification = "PASS"
         agent = self.agents.get(task.assignee, None)
         if agent is not None:
-            agent.reputation += u256(1)
+            agent.reputation += gl.u256(1)
             self.agents[task.assignee] = agent
-        _Recipient(Address(task.assignee)).emit_transfer(value=u256(int(task.reward)))
+        
+        # Use gl.pay for actual fund transfer
+        gl.pay(gl.Address(task.assignee), task.reward)
+        
         # Record emitted transfer
         self.emitted_transfers[str(self.transfer_count)] = json.dumps({
             "type": "payout",
@@ -144,7 +139,7 @@ class AgentCoordination(gl.Contract):
             "recipient": task.assignee,
             "task_id": task_id,
         })
-        self.transfer_count += u256(1)
+        self.transfer_count += gl.u256(1)
         self.tasks[task_id] = task
 
     @gl.public.write
@@ -153,10 +148,8 @@ class AgentCoordination(gl.Contract):
         task = self.tasks.get(task_id, None)
         if task is None:
             raise gl.vm.UserError("Task not found")
-        # Must be in DELIVERED state
         if task.status != "DELIVERED":
             raise gl.vm.UserError("No delivery to reject")
-        # Only poster can reject
         sender = gl.message.sender_address.as_hex
         if sender != task.poster:
             raise gl.vm.UserError("Only the poster can reject delivery")
@@ -170,18 +163,18 @@ class AgentCoordination(gl.Contract):
         task = self.tasks.get(task_id, None)
         if task is None:
             raise gl.vm.UserError("Task not found")
-        # Must be in DISPUTED state
         if task.status != "DISPUTED":
             raise gl.vm.UserError("Task is not disputed")
-        # Only poster can resolve
         sender = gl.message.sender_address.as_hex
         if sender != task.poster:
             raise gl.vm.UserError("Only the poster can resolve a dispute")
 
         task.status = "REFUNDED"
         self.tasks[task_id] = task
-        # External transfer to poster
-        _Recipient(Address(task.poster)).emit_transfer(value=u256(int(task.reward)))
+        
+        # Use gl.pay for actual fund transfer
+        gl.pay(gl.Address(task.poster), task.reward)
+        
         # Record emitted transfer
         self.emitted_transfers[str(self.transfer_count)] = json.dumps({
             "type": "refund",
@@ -189,7 +182,7 @@ class AgentCoordination(gl.Contract):
             "recipient": task.poster,
             "task_id": task_id,
         })
-        self.transfer_count += u256(1)
+        self.transfer_count += gl.u256(1)
 
     @gl.public.write
     def cancelTask(self, task_id: str) -> None:
@@ -204,7 +197,10 @@ class AgentCoordination(gl.Contract):
             raise gl.vm.UserError("Only the poster can cancel")
         task.status = "CANCELLED"
         self.tasks[task_id] = task
-        _Recipient(Address(task.poster)).emit_transfer(value=u256(int(task.reward)))
+        
+        # Use gl.pay for actual fund transfer
+        gl.pay(gl.Address(task.poster), task.reward)
+        
         # Record emitted transfer
         self.emitted_transfers[str(self.transfer_count)] = json.dumps({
             "type": "refund",
@@ -212,7 +208,7 @@ class AgentCoordination(gl.Contract):
             "recipient": task.poster,
             "task_id": task_id,
         })
-        self.transfer_count += u256(1)
+        self.transfer_count += gl.u256(1)
 
     @gl.public.view
     def getClaimCount(self) -> str:
@@ -235,8 +231,8 @@ class AgentCoordination(gl.Contract):
         })
 
     @gl.public.view
-    def getAgent(self, addr: Address) -> str:
-        agent_hex = Address(addr).as_hex
+    def getAgent(self, addr: gl.Address) -> str:
+        agent_hex = gl.Address(addr).as_hex
         a = self.agents.get(agent_hex, None)
         if a is None:
             return json.dumps({"exists": False})
