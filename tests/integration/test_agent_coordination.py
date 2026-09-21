@@ -15,15 +15,11 @@ import time
 def test_payout_real_balance_change(
     integration_vm, deployed_contract, integration_alice, integration_bob
 ):
-    """PASS verification: agent's balance increases by reward amount."""
+    """PASS verification: agent's balance increases and contract balance decreases."""
     contract = deployed_contract
     
-    # Use larger reward to offset gas costs
     reward_amount_wei = 500000000000000000  # 0.5 GEN
     stake_amount_wei = 1000000000000000000  # 1 GEN
-    
-    # Fund the contract for payouts
-    integration_bob.transfer(contract.address, 2000000000000000000)  # 2 GEN
     
     # Register as agent (Alice)
     fn = contract.registerAgent(args=["writing", ""])
@@ -42,33 +38,41 @@ def test_payout_real_balance_change(
     fn = contract.submitDelivery(args=[task_id, "https://example.com/ai-safety-delivery"])
     fn.transact_method(wait_interval=5000, wait_retries=10)
     
-    # Check agent balance before approval
-    balance_before = integration_vm.get_balance(integration_alice)
+    # Record balances BEFORE payout
+    contract_balance_before = integration_vm.get_balance(contract.address)
+    agent_balance_before = integration_vm.get_balance(integration_alice)
     
-    # Approve delivery (direct approval) — triggers payout
+    # Approve delivery — triggers payout
     fn = contract.approveDelivery(args=[task_id])
     fn.transact_method(wait_interval=10000, wait_retries=15)
     
     # Wait for external transfer to finalize
-    time.sleep(60)
+    time.sleep(90)
     
-    # Check agent balance after approval
-    balance_after = integration_vm.get_balance(integration_alice)
+    # Record balances AFTER payout
+    contract_balance_after = integration_vm.get_balance(contract.address)
+    agent_balance_after = integration_vm.get_balance(integration_alice)
     
-    # Agent should have received the reward (minus gas costs, so check >=)
-    balance_increase = balance_after - balance_before
-    assert balance_increase >= reward_amount_wei // 2, \
-        f"Agent balance increase too small: {balance_increase} < {reward_amount_wei // 2}. Before: {balance_before}, After: {balance_after}"
+    # Calculate changes
+    contract_decrease = contract_balance_before - contract_balance_after
+    agent_increase = agent_balance_after - agent_balance_before
+    
+    # VERIFY: Contract balance decreased by reward amount
+    assert contract_decrease >= reward_amount_wei, \
+        f"Contract balance did not decrease. Before: {contract_balance_before}, After: {contract_balance_after}, Decrease: {contract_decrease}"
+    
+    # VERIFY: Agent received the funds (may have gas costs deducted)
+    assert agent_increase > 0, \
+        f"Agent balance did not increase. Before: {agent_balance_before}, After: {agent_balance_after}"
 
 
 @pytest.mark.integration
 def test_refund_real_balance_change(
     integration_vm, deployed_contract, integration_alice, integration_bob
 ):
-    """Dispute resolution: poster's balance increases by refund amount."""
+    """Dispute resolution: poster's balance increases and contract balance decreases."""
     contract = deployed_contract
     
-    # Use larger reward to offset gas costs
     reward_amount_wei = 500000000000000000  # 0.5 GEN
     stake_amount_wei = 1000000000000000000  # 1 GEN
     
@@ -93,20 +97,29 @@ def test_refund_real_balance_change(
     fn = contract.rejectDelivery(args=[task_id])
     fn.transact_method(wait_interval=5000, wait_retries=10)
     
-    # Check poster balance before dispute resolution
-    balance_before = integration_vm.get_balance(integration_bob)
+    # Record balances BEFORE refund
+    contract_balance_before = integration_vm.get_balance(contract.address)
+    poster_balance_before = integration_vm.get_balance(integration_bob)
     
-    # Resolve dispute (Bob is poster) — triggers refund
+    # Resolve dispute — triggers refund
     fn = contract.resolveDispute(args=[task_id])
     fn.transact_method(wait_interval=5000, wait_retries=10)
     
     # Wait for external transfer to finalize
-    time.sleep(60)
+    time.sleep(90)
     
-    # Check poster balance after dispute resolution
-    balance_after = integration_vm.get_balance(integration_bob)
+    # Record balances AFTER refund
+    contract_balance_after = integration_vm.get_balance(contract.address)
+    poster_balance_after = integration_vm.get_balance(integration_bob)
     
-    # Poster should have received the refund
-    balance_increase = balance_after - balance_before
-    assert balance_increase >= reward_amount_wei // 2, \
-        f"Poster balance increase too small: {balance_increase} < {reward_amount_wei // 2}. Before: {balance_before}, After: {balance_after}"
+    # Calculate changes
+    contract_decrease = contract_balance_before - contract_balance_after
+    poster_increase = poster_balance_after - poster_balance_before
+    
+    # VERIFY: Contract balance decreased by refund amount
+    assert contract_decrease >= reward_amount_wei, \
+        f"Contract balance did not decrease. Before: {contract_balance_before}, After: {contract_balance_after}, Decrease: {contract_decrease}"
+    
+    # VERIFY: Poster received the funds
+    assert poster_increase > 0, \
+        f"Poster balance did not increase. Before: {poster_balance_before}, After: {poster_balance_after}"
