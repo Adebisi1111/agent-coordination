@@ -14,6 +14,15 @@ def deployed_contract():
 
 
 @pytest.fixture(scope="session")
+def integration_deploy():
+    """Factory fixture that deploys a fresh contract for tests that need it."""
+    def _deploy(contract_path):
+        factory = get_contract_factory("AgentCoordination")
+        return factory.deploy()
+    return _deploy
+
+
+@pytest.fixture(scope="session")
 def integration_alice():
     """First test account - agent."""
     return get_accounts()[0]
