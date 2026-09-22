@@ -135,7 +135,7 @@ class AgentCoordination(Contract):
             self.agents[task.assignee] = agent
         
         # Use gl.pay for actual fund transfer
-        gl.pay(gl.Address(task.assignee), task.reward)
+        gl.pay(Address(task.assignee), task.reward)
         
         # Record emitted transfer
         self.emitted_transfers[str(self.transfer_count)] = json.dumps({
@@ -178,7 +178,7 @@ class AgentCoordination(Contract):
         self.tasks[task_id] = task
         
         # Use gl.pay for actual fund transfer
-        gl.pay(gl.Address(task.poster), task.reward)
+        gl.pay(Address(task.poster), task.reward)
         
         # Record emitted transfer
         self.emitted_transfers[str(self.transfer_count)] = json.dumps({
@@ -204,7 +204,7 @@ class AgentCoordination(Contract):
         self.tasks[task_id] = task
         
         # Use gl.pay for actual fund transfer
-        gl.pay(gl.Address(task.poster), task.reward)
+        gl.pay(Address(task.poster), task.reward)
         
         # Record emitted transfer
         self.emitted_transfers[str(self.transfer_count)] = json.dumps({
@@ -236,8 +236,8 @@ class AgentCoordination(Contract):
         })
 
     @gl.public.view
-    def getAgent(self, addr: gl.Address) -> str:
-        agent_hex = gl.Address(addr).as_hex
+    def getAgent(self, addr: Address) -> str:
+        agent_hex = Address(addr).as_hex
         a = self.agents.get(agent_hex, None)
         if a is None:
             return json.dumps({"exists": False})
