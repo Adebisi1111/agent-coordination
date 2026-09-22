@@ -4,7 +4,7 @@ Integration tests — require GenLayer Studio running.
 These tests verify ACTUAL account-balance changes on Studio Network,
 not just contract-maintained bookkeeping.
 
-Run with: gltest tests/integration/ --chain-type localnet -v -s
+Run with: gltest tests/integration/ -v -s
 """
 import pytest
 import json
@@ -21,23 +21,24 @@ def test_payout_real_balance_change(
     reward_amount_wei = 500000000000000000  # 0.5 GEN
     stake_amount_wei = 1000000000000000000  # 1 GEN
     
-    # Register as agent (Alice) - use emit() for write methods
-    contract.emit(value=stake_amount_wei).registerAgent(integration_alice, "writing", "")
+    # Register as agent (Alice) - send stake
+    tx = contract.registerAgent(args=["writing", ""], value=stake_amount_wei).transact()
     
     # Post task with reward (Bob is poster)
-    contract.emit(value=reward_amount_wei).postTask(integration_bob, "AI safety research paper", "")
+    tx = contract.postTask(args=["AI safety research paper", ""], value=reward_amount_wei, sender=integration_bob).transact()
+    
     task_id = "task-1"
     
     # Claim and deliver task (Alice is agent)
-    contract.emit().claimTask(integration_alice, task_id)
-    contract.emit().submitDelivery(integration_alice, task_id, "https://example.com/ai-safety-delivery")
+    tx = contract.claimTask(args=[task_id], sender=integration_alice).transact()
+    tx = contract.submitDelivery(args=[task_id, "https://example.com/ai-safety-delivery"], sender=integration_alice).transact()
     
     # Record balances BEFORE payout
     contract_balance_before = integration_vm.get_balance(contract.address)
     agent_balance_before = integration_vm.get_balance(integration_alice)
     
-    # Approve delivery — triggers payout
-    contract.emit().approveDelivery(integration_bob, task_id)
+    # Approve delivery — triggers payout (Bob is poster)
+    tx = contract.approveDelivery(args=[task_id], sender=integration_bob).transact()
     
     # Wait for external transfer to finalize
     time.sleep(90)
@@ -70,25 +71,26 @@ def test_refund_real_balance_change(
     stake_amount_wei = 1000000000000000000  # 1 GEN
     
     # Register as agent (Alice)
-    contract.emit(value=stake_amount_wei).registerAgent(integration_alice, "writing", "")
+    tx = contract.registerAgent(args=["writing", ""], value=stake_amount_wei).transact()
     
     # Post task with reward (Bob is poster)
-    contract.emit(value=reward_amount_wei).postTask(integration_bob, "Write about AI", "")
+    tx = contract.postTask(args=["Write about AI", ""], value=reward_amount_wei, sender=integration_bob).transact()
+    
     task_id = "task-1"
     
     # Claim and deliver task (Alice is agent)
-    contract.emit().claimTask(integration_alice, task_id)
-    contract.emit().submitDelivery(integration_alice, task_id, "https://example.com/off-topic")
+    tx = contract.claimTask(args=[task_id], sender=integration_alice).transact()
+    tx = contract.submitDelivery(args=[task_id, "https://example.com/off-topic"], sender=integration_alice).transact()
     
     # Reject delivery (Bob is poster)
-    contract.emit().rejectDelivery(integration_bob, task_id)
+    tx = contract.rejectDelivery(args=[task_id], sender=integration_bob).transact()
     
     # Record balances BEFORE refund
     contract_balance_before = integration_vm.get_balance(contract.address)
     poster_balance_before = integration_vm.get_balance(integration_bob)
     
-    # Resolve dispute — triggers refund
-    contract.emit().resolveDispute(integration_bob, task_id)
+    # Resolve dispute — triggers refund (Bob is poster)
+    tx = contract.resolveDispute(args=[task_id], sender=integration_bob).transact()
     
     # Wait for external transfer to finalize
     time.sleep(90)
