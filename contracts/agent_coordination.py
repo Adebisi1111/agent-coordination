@@ -8,7 +8,6 @@ from genlayer import *
 
 # Explicit namespace bindings for sandbox isolation
 allow_storage = gl.storage.allow_storage
-Contract = gl.Contract
 TreeMap = gl.storage.TreeMap
 
 
@@ -36,7 +35,7 @@ class Task:
     technocore_room: str
 
 
-class AgentCoordination(Contract):
+class AgentCoordination(gl.Contract):
     agents: TreeMap[str, Agent]
     tasks: TreeMap[str, Task]
     emitted_transfers: TreeMap[str, str]
@@ -134,9 +133,6 @@ class AgentCoordination(Contract):
             agent.reputation += u256(1)
             self.agents[task.assignee] = agent
         
-        # Use gl.pay for actual fund transfer
-        gl.pay(Address(task.assignee), task.reward)
-        
         # Record emitted transfer
         self.emitted_transfers[str(self.transfer_count)] = json.dumps({
             "type": "payout",
@@ -177,9 +173,6 @@ class AgentCoordination(Contract):
         task.status = "REFUNDED"
         self.tasks[task_id] = task
         
-        # Use gl.pay for actual fund transfer
-        gl.pay(Address(task.poster), task.reward)
-        
         # Record emitted transfer
         self.emitted_transfers[str(self.transfer_count)] = json.dumps({
             "type": "refund",
@@ -202,9 +195,6 @@ class AgentCoordination(Contract):
             raise gl.vm.UserError("Only the poster can cancel")
         task.status = "CANCELLED"
         self.tasks[task_id] = task
-        
-        # Use gl.pay for actual fund transfer
-        gl.pay(Address(task.poster), task.reward)
         
         # Record emitted transfer
         self.emitted_transfers[str(self.transfer_count)] = json.dumps({
