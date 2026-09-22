@@ -9,6 +9,14 @@ from genlayer import *
 TreeMap = gl.storage.TreeMap
 
 
+@gl.evm.contract_interface
+class _Recipient:
+    class View:
+        pass
+    class Write:
+        pass
+
+
 @allow_storage
 @dataclass
 class Agent:
@@ -132,6 +140,9 @@ class AgentCoordination(gl.Contract):
             agent.reputation += u256(1)
             self.agents[task.assignee] = agent
         
+        # Pay agent using EOA transfer
+        _Recipient(Address(task.assignee)).emit_transfer(value=task.reward)
+        
         # Record emitted transfer
         self.emitted_transfers[str(self.transfer_count)] = json.dumps({
             "type": "payout",
@@ -172,6 +183,9 @@ class AgentCoordination(gl.Contract):
         task.status = "REFUNDED"
         self.tasks[task_id] = task
         
+        # Refund poster using EOA transfer
+        _Recipient(Address(task.poster)).emit_transfer(value=task.reward)
+        
         # Record emitted transfer
         self.emitted_transfers[str(self.transfer_count)] = json.dumps({
             "type": "refund",
@@ -194,6 +208,9 @@ class AgentCoordination(gl.Contract):
             raise gl.vm.UserError("Only the poster can cancel")
         task.status = "CANCELLED"
         self.tasks[task_id] = task
+        
+        # Refund poster using EOA transfer
+        _Recipient(Address(task.poster)).emit_transfer(value=task.reward)
         
         # Record emitted transfer
         self.emitted_transfers[str(self.transfer_count)] = json.dumps({
