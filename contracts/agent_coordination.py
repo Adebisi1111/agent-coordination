@@ -9,6 +9,7 @@ from genlayer import *
 TreeMap = gl.storage.TreeMap
 
 
+@allow_storage
 @dataclass
 class Agent:
     owner: str
