@@ -3,7 +3,13 @@
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import genlayer as gl
 from genlayer import *
+
+# Explicit namespace bindings for sandbox isolation
+allow_storage = gl.storage.allow_storage
+Contract = gl.Contract
+TreeMap = gl.storage.TreeMap
 
 
 @allow_storage
@@ -30,10 +36,10 @@ class Task:
     technocore_room: str
 
 
-class AgentCoordination(gl.Contract):
-    agents: gl.storage.TreeMap[str, Agent]
-    tasks: gl.storage.TreeMap[str, Task]
-    emitted_transfers: gl.storage.TreeMap[str, str]
+class AgentCoordination(Contract):
+    agents: TreeMap[str, Agent]
+    tasks: TreeMap[str, Task]
+    emitted_transfers: TreeMap[str, str]
     task_count: u256
     transfer_count: u256 = u256(0)
     min_stake: u256 = u256(1000000000000000)  # 0.001 GEN for testing
@@ -129,7 +135,7 @@ class AgentCoordination(gl.Contract):
             self.agents[task.assignee] = agent
         
         # Use gl.pay for actual fund transfer
-        gl.pay(Address(task.assignee), task.reward)
+        gl.pay(gl.Address(task.assignee), task.reward)
         
         # Record emitted transfer
         self.emitted_transfers[str(self.transfer_count)] = json.dumps({
@@ -172,7 +178,7 @@ class AgentCoordination(gl.Contract):
         self.tasks[task_id] = task
         
         # Use gl.pay for actual fund transfer
-        gl.pay(Address(task.poster), task.reward)
+        gl.pay(gl.Address(task.poster), task.reward)
         
         # Record emitted transfer
         self.emitted_transfers[str(self.transfer_count)] = json.dumps({
@@ -198,7 +204,7 @@ class AgentCoordination(gl.Contract):
         self.tasks[task_id] = task
         
         # Use gl.pay for actual fund transfer
-        gl.pay(Address(task.poster), task.reward)
+        gl.pay(gl.Address(task.poster), task.reward)
         
         # Record emitted transfer
         self.emitted_transfers[str(self.transfer_count)] = json.dumps({
@@ -230,8 +236,8 @@ class AgentCoordination(gl.Contract):
         })
 
     @gl.public.view
-    def getAgent(self, addr: Address) -> str:
-        agent_hex = Address(addr).as_hex
+    def getAgent(self, addr: gl.Address) -> str:
+        agent_hex = gl.Address(addr).as_hex
         a = self.agents.get(agent_hex, None)
         if a is None:
             return json.dumps({"exists": False})

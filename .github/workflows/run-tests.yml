@@ -1,0 +1,38 @@
+name: Verify GrantGuard Tests
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Python 3.14
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.14"
+
+      - name: Install GenLayer SDK (official installer)
+        run: |
+          curl -fsSL https://get.genlayer.foundation | bash
+
+      - name: Set up virtual env & install Python SDK
+        run: |
+          python3 -m venv .venv
+          source .venv/bin/activate
+          pip install --upgrade pip genlayer-sdk
+
+      - name: Start Studio Next node
+        run: |
+          genlayer-studio-node --dev &
+          sleep 5
+
+      - name: Run unit tests
+        run: |
+          source .venv/bin/activate
+          python -m pytest tests/direct/test_agent_coordination.py -v
+
+      - name: Run integration tests
+        run: |
+          source .venv/bin/activate
+          gltest tests/integration/ -v -s
