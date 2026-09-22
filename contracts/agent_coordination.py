@@ -3,8 +3,7 @@
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import genlayer as gl
-from genlayer.storage import allow as allow_storage
+from genlayer import *
 
 
 @allow_storage
@@ -12,8 +11,8 @@ from genlayer.storage import allow as allow_storage
 class Agent:
     owner: str
     capabilities: str
-    stake: gl.u256
-    reputation: gl.u256
+    stake: u256
+    reputation: u256
     active: bool
     did_hash: str
 
@@ -23,7 +22,7 @@ class Agent:
 class Task:
     poster: str
     description: str
-    reward: gl.u256
+    reward: u256
     status: str
     assignee: str
     delivery_url: str
@@ -35,9 +34,9 @@ class AgentCoordination(gl.Contract):
     agents: gl.storage.TreeMap[str, Agent]
     tasks: gl.storage.TreeMap[str, Task]
     emitted_transfers: gl.storage.TreeMap[str, str]
-    task_count: gl.u256
-    transfer_count: gl.u256 = gl.u256(0)
-    min_stake: gl.u256 = gl.u256(1000000000000000)  # 0.001 GEN for testing
+    task_count: u256
+    transfer_count: u256 = u256(0)
+    min_stake: u256 = u256(1000000000000000)  # 0.001 GEN for testing
 
     def __init__(self):
         pass
@@ -53,7 +52,7 @@ class AgentCoordination(gl.Contract):
                 owner=sender,
                 capabilities=capabilities,
                 stake=gl.message.value,
-                reputation=gl.u256(0),
+                reputation=u256(0),
                 active=True,
                 did_hash=did_hash,
             )
@@ -67,9 +66,9 @@ class AgentCoordination(gl.Contract):
 
     @gl.public.write.payable
     def postTask(self, description: str, technocore_room: str = "") -> str:
-        if gl.message.value <= gl.u256(0):
+        if gl.message.value <= u256(0):
             raise gl.vm.UserError("Reward must be > 0")
-        task_id = f"task-{self.task_count + gl.u256(1)}"
+        task_id = f"task-{self.task_count + u256(1)}"
         self.tasks[task_id] = Task(
             poster=gl.message.sender_address.as_hex,
             description=description,
@@ -80,7 +79,7 @@ class AgentCoordination(gl.Contract):
             verification="PENDING",
             technocore_room=technocore_room,
         )
-        self.task_count += gl.u256(1)
+        self.task_count += u256(1)
         return task_id
 
     @gl.public.write
@@ -126,11 +125,11 @@ class AgentCoordination(gl.Contract):
         task.verification = "PASS"
         agent = self.agents.get(task.assignee, None)
         if agent is not None:
-            agent.reputation += gl.u256(1)
+            agent.reputation += u256(1)
             self.agents[task.assignee] = agent
         
         # Use gl.pay for actual fund transfer
-        gl.pay(gl.Address(task.assignee), task.reward)
+        gl.pay(Address(task.assignee), task.reward)
         
         # Record emitted transfer
         self.emitted_transfers[str(self.transfer_count)] = json.dumps({
@@ -139,7 +138,7 @@ class AgentCoordination(gl.Contract):
             "recipient": task.assignee,
             "task_id": task_id,
         })
-        self.transfer_count += gl.u256(1)
+        self.transfer_count += u256(1)
         self.tasks[task_id] = task
 
     @gl.public.write
@@ -173,7 +172,7 @@ class AgentCoordination(gl.Contract):
         self.tasks[task_id] = task
         
         # Use gl.pay for actual fund transfer
-        gl.pay(gl.Address(task.poster), task.reward)
+        gl.pay(Address(task.poster), task.reward)
         
         # Record emitted transfer
         self.emitted_transfers[str(self.transfer_count)] = json.dumps({
@@ -182,7 +181,7 @@ class AgentCoordination(gl.Contract):
             "recipient": task.poster,
             "task_id": task_id,
         })
-        self.transfer_count += gl.u256(1)
+        self.transfer_count += u256(1)
 
     @gl.public.write
     def cancelTask(self, task_id: str) -> None:
@@ -199,7 +198,7 @@ class AgentCoordination(gl.Contract):
         self.tasks[task_id] = task
         
         # Use gl.pay for actual fund transfer
-        gl.pay(gl.Address(task.poster), task.reward)
+        gl.pay(Address(task.poster), task.reward)
         
         # Record emitted transfer
         self.emitted_transfers[str(self.transfer_count)] = json.dumps({
@@ -208,7 +207,7 @@ class AgentCoordination(gl.Contract):
             "recipient": task.poster,
             "task_id": task_id,
         })
-        self.transfer_count += gl.u256(1)
+        self.transfer_count += u256(1)
 
     @gl.public.view
     def getClaimCount(self) -> str:
@@ -231,8 +230,8 @@ class AgentCoordination(gl.Contract):
         })
 
     @gl.public.view
-    def getAgent(self, addr: gl.Address) -> str:
-        agent_hex = gl.Address(addr).as_hex
+    def getAgent(self, addr: Address) -> str:
+        agent_hex = Address(addr).as_hex
         a = self.agents.get(agent_hex, None)
         if a is None:
             return json.dumps({"exists": False})
