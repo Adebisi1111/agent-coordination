@@ -4,7 +4,7 @@ Integration tests — require GenLayer Studio running.
 These tests verify ACTUAL account-balance changes on Studio Network,
 not just contract-maintained bookkeeping.
 
-Run with: gltest tests/integration/ -v -s
+Run with: gltest tests/integration/ --chain-type localnet -v -s
 """
 import pytest
 import json
@@ -21,30 +21,23 @@ def test_payout_real_balance_change(
     reward_amount_wei = 500000000000000000  # 0.5 GEN
     stake_amount_wei = 1000000000000000000  # 1 GEN
     
-    # Register as agent (Alice)
-    fn = contract.registerAgent(args=["writing", ""])
-    fn.transact_method(value=stake_amount_wei, wait_interval=5000, wait_retries=10)
+    # Register as agent (Alice) - use emit() for write methods
+    contract.emit(value=stake_amount_wei).registerAgent(integration_alice, "writing", "")
     
     # Post task with reward (Bob is poster)
-    fn = contract.postTask(args=["AI safety research paper"])
-    post_result = fn.transact_method(value=reward_amount_wei, wait_interval=5000, wait_retries=10)
-    
-    task_id = post_result.get("result", "")
-    assert task_id, f"Failed to get task_id from postTask result: {post_result}"
+    contract.emit(value=reward_amount_wei).postTask(integration_bob, "AI safety research paper", "")
+    task_id = "task-1"
     
     # Claim and deliver task (Alice is agent)
-    fn = contract.claimTask(args=[task_id])
-    fn.transact_method(wait_interval=5000, wait_retries=10)
-    fn = contract.submitDelivery(args=[task_id, "https://example.com/ai-safety-delivery"])
-    fn.transact_method(wait_interval=5000, wait_retries=10)
+    contract.emit().claimTask(integration_alice, task_id)
+    contract.emit().submitDelivery(integration_alice, task_id, "https://example.com/ai-safety-delivery")
     
     # Record balances BEFORE payout
     contract_balance_before = integration_vm.get_balance(contract.address)
     agent_balance_before = integration_vm.get_balance(integration_alice)
     
     # Approve delivery — triggers payout
-    fn = contract.approveDelivery(args=[task_id])
-    fn.transact_method(wait_interval=10000, wait_retries=15)
+    contract.emit().approveDelivery(integration_bob, task_id)
     
     # Wait for external transfer to finalize
     time.sleep(90)
@@ -77,33 +70,25 @@ def test_refund_real_balance_change(
     stake_amount_wei = 1000000000000000000  # 1 GEN
     
     # Register as agent (Alice)
-    fn = contract.registerAgent(args=["writing", ""])
-    fn.transact_method(value=stake_amount_wei, wait_interval=5000, wait_retries=10)
+    contract.emit(value=stake_amount_wei).registerAgent(integration_alice, "writing", "")
     
     # Post task with reward (Bob is poster)
-    fn = contract.postTask(args=["Write about AI", ""])
-    post_result = fn.transact_method(value=reward_amount_wei, wait_interval=5000, wait_retries=10)
-    
-    task_id = post_result.get("result", "")
-    assert task_id, f"Failed to get task_id from postTask result: {post_result}"
+    contract.emit(value=reward_amount_wei).postTask(integration_bob, "Write about AI", "")
+    task_id = "task-1"
     
     # Claim and deliver task (Alice is agent)
-    fn = contract.claimTask(args=[task_id])
-    fn.transact_method(wait_interval=5000, wait_retries=10)
-    fn = contract.submitDelivery(args=[task_id, "https://example.com/off-topic"])
-    fn.transact_method(wait_interval=5000, wait_retries=10)
+    contract.emit().claimTask(integration_alice, task_id)
+    contract.emit().submitDelivery(integration_alice, task_id, "https://example.com/off-topic")
     
     # Reject delivery (Bob is poster)
-    fn = contract.rejectDelivery(args=[task_id])
-    fn.transact_method(wait_interval=5000, wait_retries=10)
+    contract.emit().rejectDelivery(integration_bob, task_id)
     
     # Record balances BEFORE refund
     contract_balance_before = integration_vm.get_balance(contract.address)
     poster_balance_before = integration_vm.get_balance(integration_bob)
     
     # Resolve dispute — triggers refund
-    fn = contract.resolveDispute(args=[task_id])
-    fn.transact_method(wait_interval=5000, wait_retries=10)
+    contract.emit().resolveDispute(integration_bob, task_id)
     
     # Wait for external transfer to finalize
     time.sleep(90)

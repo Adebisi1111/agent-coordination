@@ -6,12 +6,9 @@ from datetime import datetime, timezone
 import genlayer as gl
 from genlayer import *
 
-# Explicit namespace bindings for sandbox isolation
-allow_storage = gl.storage.allow_storage
 TreeMap = gl.storage.TreeMap
 
 
-@allow_storage
 @dataclass
 class Agent:
     owner: str
@@ -35,6 +32,7 @@ class Task:
     technocore_room: str
 
 
+@allow_storage
 class AgentCoordination(gl.Contract):
     agents: TreeMap[str, Agent]
     tasks: TreeMap[str, Task]
