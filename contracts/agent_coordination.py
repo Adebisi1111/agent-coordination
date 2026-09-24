@@ -143,7 +143,7 @@ class AgentCoordination(gl.Contract):
         # Pay agent using EOA transfer
         _Recipient(Address(task.assignee)).emit_transfer(value=task.reward)
         
-        # Record emitted transfer
+        # Record emitted transfer and pay agent (real GEN transfer)
         self.emitted_transfers[str(self.transfer_count)] = json.dumps({
             "type": "payout",
             "amount": int(task.reward),
@@ -151,6 +151,7 @@ class AgentCoordination(gl.Contract):
             "task_id": task_id,
         })
         self.transfer_count += u256(1)
+        gl.vm.transfer(Address(task.assignee), task.reward)
         self.tasks[task_id] = task
 
     @gl.public.write
@@ -209,8 +210,8 @@ class AgentCoordination(gl.Contract):
         task.status = "CANCELLED"
         self.tasks[task_id] = task
         
-        # Refund poster using EOA transfer
-        _Recipient(Address(task.poster)).emit_transfer(value=task.reward)
+        # Refund poster using EOA transfer (real GEN transfer)
+        gl.vm.transfer(Address(task.poster), task.reward)
         
         # Record emitted transfer
         self.emitted_transfers[str(self.transfer_count)] = json.dumps({
