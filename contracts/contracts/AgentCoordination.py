@@ -183,8 +183,8 @@ class AgentCoordination(gl.Contract):
         task.status = "REFUNDED"
         self.tasks[task_id] = task
         
-        # Refund poster using EOA transfer
-        gl.vm.transfer(Address(task.poster), task.reward)
+        # Refund poster via gl.pay (real GEN transfer on Studio Next)
+        gl.pay(task.poster, int(task.reward))
         
         # Record emitted transfer
         self.emitted_transfers[str(self.transfer_count)] = json.dumps({
