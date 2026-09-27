@@ -180,6 +180,7 @@ class AgentCoordination(gl.Contract):
             "task_id": task_id,
         })
         self.transfer_count += u256(1)
+        self.tasks[task_id] = task
 
     @gl.public.write
     def cancelTask(self, task_id: str) -> None:
@@ -203,6 +204,7 @@ class AgentCoordination(gl.Contract):
             "task_id": task_id,
         })
         self.transfer_count += u256(1)
+        self.tasks[task_id] = task
 
     @gl.public.view
     def getClaimCount(self) -> str:
